@@ -1,0 +1,6 @@
+{
+  "name": "久以桌面",
+  "description": "一款仿经典91桌面风格、支持高度视觉自定义、拥有极简太空悬浮Dock以及精致卡片小桌面的Android启动器。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
