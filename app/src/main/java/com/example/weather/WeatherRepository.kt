@@ -134,7 +134,7 @@ class WeatherRepository(
                     val weather = jsonObj.getJSONObject("weather")
                     val temp = weather.optString("temp")
                     val text = weather.optString("text")
-                    
+
                     val formattedTemp = "$temp°C"
 
                     prefs.customWeather = text
@@ -158,7 +158,6 @@ class WeatherRepository(
         }
         return null
     }
-
 
     private suspend fun fetchFromOpenMeteo(
         city: String,
@@ -218,429 +217,82 @@ class WeatherRepository(
         )
     }
 
-    private var cachedLocalCities: List<CityItem>? = null
-
-    private val CITIES_JSON = """
-        [
-          {
-            "city": "北京",
-            "pinyin": "beijing",
-            "initials": "bj",
-            "lat": 39.9042,
-            "lng": 116.4074
-          },
-          {
-            "city": "上海",
-            "pinyin": "shanghai",
-            "initials": "sh",
-            "lat": 31.2304,
-            "lng": 121.4737
-          },
-          {
-            "city": "广州",
-            "pinyin": "guangzhou",
-            "initials": "gz",
-            "lat": 23.1291,
-            "lng": 113.2644
-          },
-          {
-            "city": "深圳",
-            "pinyin": "shenzhen",
-            "initials": "sz",
-            "lat": 22.5431,
-            "lng": 114.0579
-          },
-          {
-            "city": "杭州",
-            "pinyin": "hangzhou",
-            "initials": "hz",
-            "lat": 30.2741,
-            "lng": 120.1551
-          },
-          {
-            "city": "成都",
-            "pinyin": "chengdu",
-            "initials": "cd",
-            "lat": 30.5728,
-            "lng": 104.0668
-          },
-          {
-            "city": "武汉",
-            "pinyin": "wuhan",
-            "initials": "wh",
-            "lat": 30.5928,
-            "lng": 114.3055
-          },
-          {
-            "city": "南京",
-            "pinyin": "nanjing",
-            "initials": "nj",
-            "lat": 32.0584,
-            "lng": 118.7965
-          },
-          {
-            "city": "重庆",
-            "pinyin": "chongqing",
-            "initials": "cq",
-            "lat": 29.5630,
-            "lng": 106.5516
-          },
-          {
-            "city": "苏州",
-            "pinyin": "suzhou",
-            "initials": "sz",
-            "lat": 31.2990,
-            "lng": 120.6186
-          },
-          {
-            "city": "西安",
-            "pinyin": "xian",
-            "initials": "xa",
-            "lat": 34.3416,
-            "lng": 108.9398
-          },
-          {
-            "city": "天津",
-            "pinyin": "tianjin",
-            "initials": "tj",
-            "lat": 39.3434,
-            "lng": 117.3616
-          },
-          {
-            "city": "郑州",
-            "pinyin": "zhengzhou",
-            "initials": "zz",
-            "lat": 34.7466,
-            "lng": 113.6253
-          },
-          {
-            "city": "哈尔滨",
-            "pinyin": "haerbin",
-            "initials": "heb",
-            "lat": 45.8038,
-            "lng": 126.5350
-          },
-          {
-            "city": "长春",
-            "pinyin": "changchun",
-            "initials": "cc",
-            "lat": 43.8171,
-            "lng": 125.3235
-          },
-          {
-            "city": "沈阳",
-            "pinyin": "shenyang",
-            "initials": "sy",
-            "lat": 41.8057,
-            "lng": 123.4315
-          },
-          {
-            "city": "石家庄",
-            "pinyin": "shijiazhuang",
-            "initials": "sjz",
-            "lat": 38.0423,
-            "lng": 114.5149
-          },
-          {
-            "city": "太原",
-            "pinyin": "taiyuan",
-            "initials": "ty",
-            "lat": 37.8732,
-            "lng": 112.5621
-          },
-          {
-            "city": "济南",
-            "pinyin": "jinan",
-            "initials": "jn",
-            "lat": 36.6512,
-            "lng": 116.9949
-          },
-          {
-            "city": "青岛",
-            "pinyin": "qingdao",
-            "initials": "qd",
-            "lat": 36.0671,
-            "lng": 120.3826
-          },
-          {
-            "city": "合肥",
-            "pinyin": "hefei",
-            "initials": "hf",
-            "lat": 31.8206,
-            "lng": 117.2272
-          },
-          {
-            "city": "福州",
-            "pinyin": "fuzhou",
-            "initials": "fz",
-            "lat": 26.0745,
-            "lng": 119.2965
-          },
-          {
-            "city": "厦门",
-            "pinyin": "xiamen",
-            "initials": "xm",
-            "lat": 24.4798,
-            "lng": 118.0894
-          },
-          {
-            "city": "南昌",
-            "pinyin": "nanchang",
-            "initials": "nc",
-            "lat": 28.6820,
-            "lng": 115.8579
-          },
-          {
-            "city": "长沙",
-            "pinyin": "changsha",
-            "initials": "cs",
-            "lat": 28.2282,
-            "lng": 112.9388
-          },
-          {
-            "city": "南宁",
-            "pinyin": "nanning",
-            "initials": "nn",
-            "lat": 22.8170,
-            "lng": 108.3665
-          },
-          {
-            "city": "海口",
-            "pinyin": "haikou",
-            "initials": "hk",
-            "lat": 20.0174,
-            "lng": 110.3492
-          },
-          {
-            "city": "昆明",
-            "pinyin": "kunming",
-            "initials": "km",
-            "lat": 25.0406,
-            "lng": 102.7122
-          },
-          {
-            "city": "贵阳",
-            "pinyin": "guiyang",
-            "initials": "gy",
-            "lat": 26.6470,
-            "lng": 106.6302
-          },
-          {
-            "city": "兰州",
-            "pinyin": "lanzhou",
-            "initials": "lz",
-            "lat": 36.0611,
-            "lng": 103.8343
-          },
-          {
-            "city": "西宁",
-            "pinyin": "xining",
-            "initials": "xn",
-            "lat": 36.6171,
-            "lng": 101.7782
-          },
-          {
-            "city": "银川",
-            "pinyin": "yinchuan",
-            "initials": "yc",
-            "lat": 38.4872,
-            "lng": 106.2309
-          },
-          {
-            "city": "呼和浩特",
-            "pinyin": "huhehaote",
-            "initials": "hhht",
-            "lat": 40.8415,
-            "lng": 111.7511
-          },
-          {
-            "city": "拉萨",
-            "pinyin": "lasa",
-            "initials": "ls",
-            "lat": 29.6524,
-            "lng": 91.1172
-          },
-          {
-            "city": "乌鲁木齐",
-            "pinyin": "wulumuqi",
-            "initials": "wlmq",
-            "lat": 43.8256,
-            "lng": 87.6168
-          },
-          {
-            "city": "宁波",
-            "pinyin": "ningbo",
-            "initials": "nb",
-            "lat": 29.8683,
-            "lng": 121.5440
-          },
-          {
-            "city": "温州",
-            "pinyin": "wenzhou",
-            "initials": "wz",
-            "lat": 27.9943,
-            "lng": 120.6994
-          },
-          {
-            "city": "绍兴",
-            "pinyin": "shaoxing",
-            "initials": "sx",
-            "lat": 30.0024,
-            "lng": 120.5796
-          },
-          {
-            "city": "金华",
-            "pinyin": "jinhua",
-            "initials": "jh",
-            "lat": 29.0781,
-            "lng": 119.6475
-          },
-          {
-            "city": "泉州",
-            "pinyin": "quanzhou",
-            "initials": "qz",
-            "lat": 24.8741,
-            "lng": 118.6757
-          },
-          {
-            "city": "珠海",
-            "pinyin": "zhuhai",
-            "initials": "zh",
-            "lat": 22.2707,
-            "lng": 113.5767
-          },
-          {
-            "city": "东莞",
-            "pinyin": "dongguan",
-            "initials": "dg",
-            "lat": 23.0205,
-            "lng": 113.7518
-          },
-          {
-            "city": "佛山",
-            "pinyin": "foshan",
-            "initials": "fs",
-            "lat": 23.0215,
-            "lng": 113.1214
-          },
-          {
-            "city": "无锡",
-            "pinyin": "wuxi",
-            "initials": "wx",
-            "lat": 31.4912,
-            "lng": 120.3119
-          },
-          {
-            "city": "常州",
-            "pinyin": "changzhou",
-            "initials": "cz",
-            "lat": 31.7833,
-            "lng": 119.9667
-          },
-          {
-            "city": "大理",
-            "pinyin": "dali",
-            "initials": "dl",
-            "lat": 25.6065,
-            "lng": 100.2676
-          },
-          {
-            "city": "丽江",
-            "pinyin": "lijiang",
-            "initials": "lj",
-            "lat": 26.8550,
-            "lng": 100.2244
-          },
-          {
-            "city": "三亚",
-            "pinyin": "sanya",
-            "initials": "sy",
-            "lat": 18.2528,
-            "lng": 109.5119
-          },
-          {
-            "city": "桂林",
-            "pinyin": "guilin",
-            "initials": "gl",
-            "lat": 25.2736,
-            "lng": 110.2901
-          }
-        ]
-    """.trimIndent()
-
-    private fun loadLocalCities(): List<CityItem> {
-        val cached = cachedLocalCities
-        if (cached != null) return cached
-        
+    // ─── 城市搜索：一级 city-search-worker ───────────────────────────────────
+    private suspend fun searchFromCityWorker(query: String): List<CityItem> {
         return try {
-            val jsonArray = org.json.JSONArray(CITIES_JSON)
-            val list = mutableListOf<CityItem>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val city = obj.optString("city", "")
-                val pinyin = obj.optString("pinyin", "")
-                val initials = obj.optString("initials", "")
-                val lat = obj.optDouble("lat", 0.0)
-                val lng = obj.optDouble("lng", 0.0)
-                list.add(
-                    CityItem(
-                        name = city,
-                        city = city,
-                        pinyin = pinyin,
-                        initials = initials,
-                        lat = lat,
-                        lng = lng,
-                        population = 10000000L - i,
-                        country = "中国",
-                        admin = city
-                    )
-                )
+            val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+            // ⚠️ 换成你 city-search-worker 的实际部署地址
+            val workerUrl = "https://city-search-worker.charloshyens-d19.workers.dev/search?q=$encoded"
+            val conn = URL(workerUrl).openConnection() as HttpURLConnection
+            conn.connectTimeout = 4000
+            conn.readTimeout = 4000
+
+            if (conn.responseCode == 200) {
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val arr = org.json.JSONArray(resp)
+                val list = mutableListOf<CityItem>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val name    = obj.optString("name", "")
+                    val country = obj.optString("country", "")
+                    val admin   = obj.optString("admin", "")
+                    val pop     = obj.optLong("population", 0L)
+                    if (name.isNotEmpty()) {
+                        list.add(
+                            CityItem(
+                                name       = name,
+                                city       = name,
+                                pinyin     = "",
+                                initials   = "",
+                                lat        = null,
+                                lng        = null,
+                                population = pop,
+                                country    = country,
+                                admin      = admin
+                            )
+                        )
+                    }
+                }
+                list
+            } else {
+                emptyList()
             }
-            cachedLocalCities = list
-            list
         } catch (e: Exception) {
-            android.util.Log.e("WeatherRepository", "Failed to parse local cities JSON", e)
+            android.util.Log.e("WeatherRepository", "city-search-worker failed: ${e.message}")
             emptyList()
         }
     }
 
-    private fun searchLocalCities(query: String): List<CityItem> {
-        val trimmed = query.trim().lowercase()
-        if (trimmed.isEmpty()) return emptyList()
-        val allLocal = loadLocalCities()
-        
-        return allLocal.filter { item ->
-            item.city.lowercase().contains(trimmed) ||
-            item.pinyin.lowercase().contains(trimmed) ||
-            item.initials.lowercase().contains(trimmed)
-        }.sortedWith(compareBy<CityItem> { item ->
-            val cityLower = item.city.lowercase()
-            val pinyinLower = item.pinyin.lowercase()
-            val initialsLower = item.initials.lowercase()
-            when {
-                cityLower == trimmed || pinyinLower == trimmed || initialsLower == trimmed -> 0
-                cityLower.startsWith(trimmed) || pinyinLower.startsWith(trimmed) || initialsLower.startsWith(trimmed) -> 1
-                else -> 2
-            }
-        })
-    }
-
+    // ─── 城市搜索主入口：三级兜底 ────────────────────────────────────────────
     suspend fun searchCityGeo(query: String): List<CityItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
-        
-        // 1. Search locally first
-        val localResults = searchLocalCities(trimmed)
-        if (localResults.isNotEmpty()) {
-            return@withContext localResults
-        }
 
-        // 2. Fallback to OpenMeteo geocoding search
+        // 一级：city-search-worker（GeoNames D1，支持拼音/缩写/英文/中文别名）
+        val workerResults = searchFromCityWorker(trimmed)
+        if (workerResults.isNotEmpty()) {
+            return@withContext workerResults
+        }
+        android.util.Log.w("WeatherRepository", "city-search-worker 无结果，进入兜底")
+
+        // 二级兜底候选：直接使用用户原始输入作为城市名（population = -1 作标记）
+        val directItem = CityItem(
+            name       = trimmed,
+            city       = trimmed,
+            pinyin     = "",
+            initials   = "",
+            lat        = null,
+            lng        = null,
+            population = -1L,
+            country    = "",
+            admin      = ""
+        )
+
+        // 三级兜底：OpenMeteo Geocoding API
         val list = mutableListOf<CityItem>()
         try {
             val openMeteoGeoUrl = "https://geocoding-api.open-meteo.com/v1/search?name=${URLEncoder.encode(trimmed, "UTF-8")}&count=20&language=zh"
-            val url = URL(openMeteoGeoUrl)
-            val conn = url.openConnection() as HttpURLConnection
+            val conn = URL(openMeteoGeoUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
             if (conn.responseCode == 200) {
@@ -649,14 +301,14 @@ class WeatherRepository(
                 if (jsonObj.has("results")) {
                     val resultsArray = jsonObj.getJSONArray("results")
                     for (k in 0 until resultsArray.length()) {
-                        val rObj = resultsArray.getJSONObject(k)
-                        val cityName = rObj.optString("name")
-                        val rCountry = rObj.optString("country")
+                        val rObj       = resultsArray.getJSONObject(k)
+                        val cityName   = rObj.optString("name")
+                        val rCountry   = rObj.optString("country")
                         val adminState = rObj.optString("admin1")
-                        val latitude = if (rObj.has("latitude")) rObj.optDouble("latitude") else null
-                        val longitude = if (rObj.has("longitude")) rObj.optDouble("longitude") else null
-                        val pop = if (rObj.has("population")) rObj.optLong("population") else 0L
-                        
+                        val latitude   = if (rObj.has("latitude")) rObj.optDouble("latitude") else null
+                        val longitude  = if (rObj.has("longitude")) rObj.optDouble("longitude") else null
+                        val pop        = if (rObj.has("population")) rObj.optLong("population") else 0L
+
                         val formattedName = if (rCountry.isNotEmpty() && rCountry != "中国") {
                             "$cityName, $rCountry"
                         } else if (adminState.isNotEmpty() && adminState != cityName) {
@@ -666,37 +318,34 @@ class WeatherRepository(
                         }
                         list.add(
                             CityItem(
-                                name = formattedName,
-                                city = cityName,
-                                pinyin = "",
-                                initials = "",
-                                lat = latitude,
-                                lng = longitude,
+                                name       = formattedName,
+                                city       = cityName,
+                                pinyin     = "",
+                                initials   = "",
+                                lat        = latitude,
+                                lng        = longitude,
                                 population = pop,
-                                country = rCountry,
-                                admin = adminState
+                                country    = rCountry,
+                                admin      = adminState
                             )
                         )
                     }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("WeatherRepository", "Open-Meteo Geo query failed: ${e.message}")
+            android.util.Log.e("WeatherRepository", "Open-Meteo Geo 三级兜底失败: ${e.message}")
         }
-        list.distinctBy { it.name }.sortedByDescending { it.population ?: 0L }
+
+        val openMeteoResults = list.distinctBy { it.name }.sortedByDescending { it.population ?: 0L }
+        // directItem 始终置顶，让用户可以选择直接使用原始输入
+        listOf(directItem) + openMeteoResults
     }
 
+    // ─── resolveCityDetails：直接走 OpenMeteo，本地 JSON 已删除 ──────────────
     suspend fun resolveCityDetails(query: String): CityItem? = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext null
 
-        // 1. Resolve locally first
-        val localResults = searchLocalCities(trimmed)
-        if (localResults.isNotEmpty()) {
-            return@withContext localResults.first()
-        }
-
-        // 2. Fallback to OpenMeteo
         try {
             val encoded = URLEncoder.encode(trimmed, "UTF-8")
             val urlString = "https://geocoding-api.open-meteo.com/v1/search?name=$encoded&count=1&language=zh"
@@ -709,13 +358,13 @@ class WeatherRepository(
                 if (json.has("results")) {
                     val arr = json.getJSONArray("results")
                     if (arr.length() > 0) {
-                        val first = arr.getJSONObject(0)
-                        val name = first.optString("name")
+                        val first    = arr.getJSONObject(0)
+                        val name     = first.optString("name")
                         val latitude = first.optDouble("latitude")
                         val longitude = first.optDouble("longitude")
                         val rCountry = first.optString("country")
-                        val rAdmin = first.optString("admin1")
-                        
+                        val rAdmin   = first.optString("admin1")
+
                         val finalCity = if (rCountry.isNotEmpty() && rCountry != "中国") {
                             "$name, $rCountry"
                         } else if (rAdmin.isNotEmpty() && rAdmin != name) {
@@ -723,17 +372,17 @@ class WeatherRepository(
                         } else {
                             name
                         }
-                        
+
                         return@withContext CityItem(
-                            name = finalCity,
-                            city = name,
-                            pinyin = "",
-                            initials = "",
-                            lat = latitude,
-                            lng = longitude,
+                            name       = finalCity,
+                            city       = name,
+                            pinyin     = "",
+                            initials   = "",
+                            lat        = latitude,
+                            lng        = longitude,
                             population = first.optLong("population", 0L),
-                            country = rCountry,
-                            admin = rAdmin
+                            country    = rCountry,
+                            admin      = rAdmin
                         )
                     }
                 }
@@ -744,8 +393,8 @@ class WeatherRepository(
         null
     }
 
+    // ─── 手机定位反查城市名（经纬度唯一使用入口）────────────────────────────
     suspend fun reverseGeocode(lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
-        // Try Online OSM Nominatim first to avoid Android Geocoder's "Service not available" failures in virtual environments
         try {
             val urlString = "https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=json&accept-language=zh"
             val url = URL(urlString)
