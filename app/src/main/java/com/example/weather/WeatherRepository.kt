@@ -122,7 +122,7 @@ class WeatherRepository(
         admin: String
     ): WeatherFetchResult? {
         try {
-            val workerUrl = "https://steep-sea-0183.charloshyens-d19.workers.dev/?city=${URLEncoder.encode(city, "UTF-8")}"
+            val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(city, "UTF-8")}"
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
@@ -222,7 +222,7 @@ class WeatherRepository(
         return try {
             val encoded = URLEncoder.encode(query.trim(), "UTF-8")
             // ⚠️ 换成你 city-search-worker 的实际部署地址
-            val workerUrl = "https://city-search-worker.charloshyens-d19.workers.dev/search?q=$encoded"
+            val workerUrl = "https://citysearch.charlosh.qzz.io/search?q=$encoded"
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
