@@ -167,7 +167,7 @@ class WeatherRepository(
                 }
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] Worker fetch failed: ${e.message}")
+            android.util.Log.e("WeatherRepository", "Worker fetch failed: ${e.message}")
         }
         return null
     }
@@ -200,7 +200,7 @@ class WeatherRepository(
                 }
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] Open-Meteo forecast failed: ${e.message}")
+            android.util.Log.e("WeatherRepository", "Open-Meteo forecast failed: ${e.message}")
         }
         val text = prefs.customWeather.ifEmpty { "多云" }
         val temp = prefs.customTemp.ifEmpty { "18°C" }
@@ -224,15 +224,15 @@ class WeatherRepository(
             val encoded = URLEncoder.encode(query.trim(), "UTF-8")
             val lang = getSystemLangTag()
             val workerUrl = "https://citysearch.charlosh.qzz.io/search?q=$encoded&lang=$lang"
-            DebugLogger.log(context, "WeatherRepository", "城市一级：请求 city-search-worker，query=$query lang=$lang")
+            android.util.Log.d("WeatherRepository", "城市一级：请求 city-search-worker，query=$query lang=$lang")
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
             if (conn.responseCode == 200) {
                 val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                DebugLogger.log(context, "WeatherRepository", "城市一级：HTTP 状态码=200")
+                android.util.Log.d("WeatherRepository", "城市一级：HTTP 状态码=200")
                 val arr = org.json.JSONArray(resp)
-                DebugLogger.log(context, "WeatherRepository", "城市一级：解析出 ${arr.length()} 条结果")
+                android.util.Log.d("WeatherRepository", "城市一级：解析出 ${arr.length()} 条结果")
                 val list = mutableListOf<CityItem>()
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
@@ -252,11 +252,11 @@ class WeatherRepository(
                 }
                 list
             } else {
-                DebugLogger.log(context, "WeatherRepository", "[W] 城市一级：HTTP 状态码=${conn.responseCode}")
+                android.util.Log.w("WeatherRepository", "城市一级：HTTP 状态码=${conn.responseCode}")
                 emptyList()
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] 城市一级：异常 ${e.message}，进入兜底")
+            android.util.Log.e("WeatherRepository", "城市一级：异常 ${e.message}，进入兜底")
             emptyList()
         }
     }
@@ -265,7 +265,7 @@ class WeatherRepository(
     private suspend fun searchFromQWeatherDirect(query: String): CityItem? {
         return try {
             val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(query.trim(), "UTF-8")}"
-            DebugLogger.log(context, "WeatherRepository", "城市二级：请求 QWeather Worker，query=$query")
+            android.util.Log.d("WeatherRepository", "城市二级：请求 QWeather Worker，query=$query")
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
@@ -277,7 +277,7 @@ class WeatherRepository(
                     val cityName = jsonObj.optString("city", query)
                     val country  = jsonObj.optString("country", "")
                     val province = jsonObj.optString("province", "")
-                    DebugLogger.log(context, "WeatherRepository", "城市二级：QWeather 命中，city=$cityName")
+                    android.util.Log.d("WeatherRepository", "城市二级：QWeather 命中，city=$cityName")
                     CityItem(
                         name       = if (province.isNotEmpty() && province != cityName) "$cityName ($province)" else cityName,
                         city       = cityName,
@@ -290,15 +290,15 @@ class WeatherRepository(
                         admin      = province
                     )
                 } else {
-                    DebugLogger.log(context, "WeatherRepository", "城市二级：QWeather 无结果，进入三级")
+                    android.util.Log.d("WeatherRepository", "城市二级：QWeather 无结果，进入三级")
                     null
                 }
             } else {
-                DebugLogger.log(context, "WeatherRepository", "[W] 城市二级：HTTP 状态码=${conn.responseCode}，进入三级")
+                android.util.Log.w("WeatherRepository", "城市二级：HTTP 状态码=${conn.responseCode}，进入三级")
                 null
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] 城市二级：异常 ${e.message}，进入三级")
+            android.util.Log.e("WeatherRepository", "城市二级：异常 ${e.message}，进入三级")
             null
         }
     }
@@ -309,7 +309,7 @@ class WeatherRepository(
         val list = mutableListOf<CityItem>()
         try {
             val url = "https://geocoding-api.open-meteo.com/v1/search?name=${URLEncoder.encode(query.trim(), "UTF-8")}&count=20&language=$openMeteoLang"
-            DebugLogger.log(context, "WeatherRepository", "城市三级：请求 OpenMeteo Geocoding，url=$url")
+            android.util.Log.d("WeatherRepository", "城市三级：请求 OpenMeteo Geocoding，url=$url")
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
@@ -318,7 +318,7 @@ class WeatherRepository(
                 val jsonObj = JSONObject(resp)
                 if (jsonObj.has("results")) {
                     val arr = jsonObj.getJSONArray("results")
-                    DebugLogger.log(context, "WeatherRepository", "城市三级：OpenMeteo 返回 ${arr.length()} 条结果")
+                    android.util.Log.d("WeatherRepository", "城市三级：OpenMeteo 返回 ${arr.length()} 条结果")
                     for (k in 0 until arr.length()) {
                         val rObj       = arr.getJSONObject(k)
                         val cityName   = rObj.optString("name")
@@ -340,11 +340,11 @@ class WeatherRepository(
                         ))
                     }
                 } else {
-                    DebugLogger.log(context, "WeatherRepository", "城市三级：OpenMeteo 无 results 字段，返回空")
+                    android.util.Log.d("WeatherRepository", "城市三级：OpenMeteo 无 results 字段，返回空")
                 }
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] 城市三级：异常 ${e.message}")
+            android.util.Log.e("WeatherRepository", "城市三级：异常 ${e.message}")
         }
         // 按城市名去重，人口降序
         return list.distinctBy { it.name }.sortedByDescending { it.population ?: 0L }
@@ -370,22 +370,22 @@ class WeatherRepository(
         // 一级
         val workerResults = searchFromCityWorker(trimmed)
         if (workerResults.isNotEmpty()) {
-            DebugLogger.log(context, "WeatherRepository", "城市搜索：一级命中，返回 ${workerResults.size} 条")
+            android.util.Log.d("WeatherRepository", "城市搜索：一级命中，返回 ${workerResults.size} 条")
             return@withContext workerResults
         }
-        DebugLogger.log(context, "WeatherRepository", "[W] 城市搜索：一级无结果，进入二级")
+        android.util.Log.w("WeatherRepository", "城市搜索：一级无结果，进入二级")
 
         // 二级
         val qWeatherItem = searchFromQWeatherDirect(trimmed)
         if (qWeatherItem != null) {
-            DebugLogger.log(context, "WeatherRepository", "城市搜索：二级命中，返回 1 条")
+            android.util.Log.d("WeatherRepository", "城市搜索：二级命中，返回 1 条")
             return@withContext listOf(qWeatherItem)
         }
-        DebugLogger.log(context, "WeatherRepository", "[W] 城市搜索：二级无结果，进入三级")
+        android.util.Log.w("WeatherRepository", "城市搜索：二级无结果，进入三级")
 
         // 三级
         val openMeteoResults = searchFromOpenMeteoGeo(trimmed)
-        DebugLogger.log(context, "WeatherRepository", "城市搜索：三级返回 ${openMeteoResults.size} 条")
+        android.util.Log.d("WeatherRepository", "城市搜索：三级返回 ${openMeteoResults.size} 条")
         return@withContext openMeteoResults  // 空列表也直接返回，界面显示"未找到"
     }
 
@@ -417,7 +417,7 @@ class WeatherRepository(
                             rAdmin.isNotEmpty() && rAdmin != name -> "$name ($rAdmin)"
                             else -> name
                         }
-                        DebugLogger.log(context, "WeatherRepository", "resolveCityDetails：成功 name=$finalCity lat=$latitude lng=$longitude")
+                        android.util.Log.d("WeatherRepository", "resolveCityDetails：成功 name=$finalCity lat=$latitude lng=$longitude")
                         return@withContext CityItem(
                             name = finalCity, city = name, pinyin = "", initials = "",
                             lat = latitude, lng = longitude,
@@ -428,7 +428,7 @@ class WeatherRepository(
                 }
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] resolveCityDetails failed for $query: ${e.message}")
+            android.util.Log.e("WeatherRepository", "resolveCityDetails failed for $query: ${e.message}")
         }
         null
     }
@@ -461,7 +461,7 @@ class WeatherRepository(
                 }
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] OSM Nominatim reverseGeocode failed: ${e.message}")
+            android.util.Log.e("WeatherRepository", "OSM Nominatim reverseGeocode failed: ${e.message}")
         }
 
         // Fallback to Android Geocoder（使用系统 Locale，不写死中文）
@@ -477,7 +477,7 @@ class WeatherRepository(
                 if (cleanCity.isNotEmpty()) return@withContext cleanCity
             }
         } catch (e: Exception) {
-            DebugLogger.log(context, "WeatherRepository", "[E] Failed system reverseGeocode: ${e.message}")
+            android.util.Log.e("WeatherRepository", "Failed system reverseGeocode: ${e.message}")
         }
         null
     }
