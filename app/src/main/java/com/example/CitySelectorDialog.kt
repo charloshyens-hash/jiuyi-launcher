@@ -41,7 +41,7 @@ fun CitySelectorDialog(
     val context = LocalContext.current
     var searchText by remember { mutableStateOf("") }
     var recentCitiesList by remember { mutableStateOf(viewModel.prefs.getRecentCityObjects()) }
-    
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions: Map<String, Boolean> ->
@@ -64,15 +64,17 @@ fun CitySelectorDialog(
             Toast.makeText(context, "需要定位权限以自动填充城市", Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     val searchResults by viewModel.citySearchResults.collectAsState()
-    
+
+    // 防抖已在 LauncherViewModel.searchCityGeo 里通过 searchJob?.cancel() + delay(350) 实现
+    // UI 层直接调用，无需额外 delay，避免双重防抖冲突
     LaunchedEffect(searchText) {
         viewModel.searchCityGeo(searchText)
     }
-    
+
     val popularCities = listOf("北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "重庆", "西安", "苏州", "天津")
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -116,7 +118,7 @@ fun CitySelectorDialog(
                         )
                     }
                 }
-                
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)
@@ -150,9 +152,9 @@ fun CitySelectorDialog(
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
                     )
-                    
+
                     Spacer(modifier = Modifier.width(8.dp))
-                    
+
                     Button(
                         onClick = {
                             val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -202,7 +204,7 @@ fun CitySelectorDialog(
                         }
                     }
                 }
-                
+
                 if (searchText.trim().isNotEmpty()) {
                     Text(
                         text = "全局定位检索匹配站点（含中文自建与全球索引）：",
@@ -211,7 +213,7 @@ fun CitySelectorDialog(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 6.dp)
                     )
-                    
+
                     androidx.compose.foundation.lazy.LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -245,7 +247,7 @@ fun CitySelectorDialog(
                             }
                             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
                         }
-                        
+
                         items(searchResults.size) { i ->
                             val item = searchResults[i]
                             Row(
@@ -351,7 +353,7 @@ fun CitySelectorDialog(
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                         }
-                        
+
                         Text(
                             text = "热门城市",
                             color = Color.White.copy(alpha = 0.45f),
