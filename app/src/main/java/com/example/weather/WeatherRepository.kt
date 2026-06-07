@@ -30,7 +30,7 @@ class WeatherRepository(
 
     /**
      * 获取系统语言标签，精确区分简繁体和香港。
-     * 返回值直接用于 city-search-worker 的 lang 参数。
+     * 返回值直接用于 city-search-worker 和 QWeather Worker 的 lang 参数。
      *   zh-HK / zh-MO → "zh-HK"
      *   zh-TW / zh-Hant → "zh-TW"
      *   zh-* (其余简体) → "zh-CN"
@@ -54,23 +54,109 @@ class WeatherRepository(
         return if (tag.startsWith("zh")) "zh" else tag.split("-")[0]
     }
 
-    // ─── 天气代码翻译（保持原样）─────────────────────────────────────────────
-
+    // ─── WMO 天气代码翻译（仅用于 OpenMeteo 兜底路径）────────────────────────
+    // QWeather 主路径已通过 lang 参数在服务端完成本地化，此处仅为 OpenMeteo 数字
+    // code 提供本地化翻译，覆盖 QWeather 官方支持的全部主要语言。
     fun translateWeatherCode(code: Int): String {
+        val lang = getSystemLangTag().lowercase()
+        val isZh = lang.startsWith("zh")
+        val isJa = lang.startsWith("ja")
+        val isKo = lang.startsWith("ko")
+        val isDe = lang.startsWith("de")
+        val isFr = lang.startsWith("fr")
+        val isEs = lang.startsWith("es")
+        val isPt = lang.startsWith("pt")
+        val isRu = lang.startsWith("ru")
+        val isIt = lang.startsWith("it")
+        val isNl = lang.startsWith("nl")
+        val isAr = lang.startsWith("ar")
+        val isTr = lang.startsWith("tr")
+        val isId = lang.startsWith("id")
+        val isTh = lang.startsWith("th")
+        val isVi = lang.startsWith("vi")
+        val isPl = lang.startsWith("pl")
+
         return when (code) {
-            0 -> "晴"
-            1, 2 -> "多云"
-            3 -> "阴"
-            45, 48 -> "雾"
-            51, 53, 55, 61, 63, 65, 80, 81, 82 -> "小雨"
-            56, 57, 66, 67 -> "雨夹雪"
-            71, 73, 75, 77, 85, 86 -> "雪"
-            95, 96, 99 -> "雷阵雨"
-            else -> "多云"
+            0 -> when {
+                isZh -> "晴";   isJa -> "晴れ";   isKo -> "맑음"
+                isDe -> "Klar"; isFr -> "Clair";  isEs -> "Despejado"
+                isPt -> "Limpo"; isRu -> "Ясно";  isIt -> "Sereno"
+                isNl -> "Helder"; isAr -> "صافٍ"; isTr -> "Açık"
+                isId -> "Cerah"; isTh -> "แจ่มใส"; isVi -> "Quang đãng"
+                isPl -> "Bezchmurnie"; else -> "Clear"
+            }
+            1, 2 -> when {
+                isZh -> "多云";   isJa -> "一部曇り";   isKo -> "구름 조금"
+                isDe -> "Teilweise bewölkt"; isFr -> "Partiellement nuageux"
+                isEs -> "Parcialmente nublado"; isPt -> "Parcialmente nublado"
+                isRu -> "Переменная облачность"; isIt -> "Parzialmente nuvoloso"
+                isNl -> "Gedeeltelijk bewolkt"; isAr -> "غائم جزئياً"
+                isTr -> "Parçalı bulutlu"; isId -> "Berawan sebagian"
+                isTh -> "มีเมฆบางส่วน"; isVi -> "Ít mây"
+                isPl -> "Częściowe zachmurzenie"; else -> "Partly Cloudy"
+            }
+            3 -> when {
+                isZh -> "阴";   isJa -> "曇り";   isKo -> "흐림"
+                isDe -> "Bedeckt"; isFr -> "Couvert"; isEs -> "Nublado"
+                isPt -> "Nublado"; isRu -> "Пасмурно"; isIt -> "Coperto"
+                isNl -> "Bewolkt"; isAr -> "غائم"; isTr -> "Kapalı"
+                isId -> "Mendung"; isTh -> "มีเมฆมาก"; isVi -> "U ám"
+                isPl -> "Zachmurzenie"; else -> "Overcast"
+            }
+            45, 48 -> when {
+                isZh -> "雾";  isJa -> "霧";  isKo -> "안개"
+                isDe -> "Nebel"; isFr -> "Brouillard"; isEs -> "Niebla"
+                isPt -> "Nevoeiro"; isRu -> "Туман"; isIt -> "Nebbia"
+                isNl -> "Mist"; isAr -> "ضباب"; isTr -> "Sis"
+                isId -> "Kabut"; isTh -> "หมอก"; isVi -> "Sương mù"
+                isPl -> "Mgła"; else -> "Fog"
+            }
+            51, 53, 55, 61, 63, 65, 80, 81, 82 -> when {
+                isZh -> "雨";  isJa -> "雨";  isKo -> "비"
+                isDe -> "Regen"; isFr -> "Pluie"; isEs -> "Lluvia"
+                isPt -> "Chuva"; isRu -> "Дождь"; isIt -> "Pioggia"
+                isNl -> "Regen"; isAr -> "مطر"; isTr -> "Yağmur"
+                isId -> "Hujan"; isTh -> "ฝน"; isVi -> "Mưa"
+                isPl -> "Deszcz"; else -> "Rain"
+            }
+            56, 57, 66, 67 -> when {
+                isZh -> "雨夹雪"; isJa -> "みぞれ"; isKo -> "진눈깨비"
+                isDe -> "Schneeregen"; isFr -> "Grésil"; isEs -> "Aguanieve"
+                isPt -> "Granizo"; isRu -> "Мокрый снег"; isIt -> "Nevischio"
+                isNl -> "Natte sneeuw"; isAr -> "ثلج ممطر"
+                isTr -> "Karla karışık yağmur"; isId -> "Hujan salju"
+                isTh -> "ลูกเห็บ"; isVi -> "Mưa tuyết"
+                isPl -> "Śnieg z deszczem"; else -> "Sleet"
+            }
+            71, 73, 75, 77, 85, 86 -> when {
+                isZh -> "雪";  isJa -> "雪";  isKo -> "눈"
+                isDe -> "Schnee"; isFr -> "Neige"; isEs -> "Nieve"
+                isPt -> "Neve"; isRu -> "Снег"; isIt -> "Neve"
+                isNl -> "Sneeuw"; isAr -> "ثلج"; isTr -> "Kar"
+                isId -> "Salju"; isTh -> "หิมะ"; isVi -> "Tuyết"
+                isPl -> "Śnieg"; else -> "Snow"
+            }
+            95, 96, 99 -> when {
+                isZh -> "雷阵雨"; isJa -> "雷雨"; isKo -> "뇌우"
+                isDe -> "Gewitter"; isFr -> "Orage"; isEs -> "Tormenta"
+                isPt -> "Tempestade"; isRu -> "Гроза"; isIt -> "Temporale"
+                isNl -> "Onweer"; isAr -> "عاصفة رعدية"
+                isTr -> "Gök gürültülü fırtına"; isId -> "Badai petir"
+                isTh -> "พายุฝนฟ้าคะนอง"; isVi -> "Giông bão"
+                isPl -> "Burza"; else -> "Thunderstorm"
+            }
+            else -> when {
+                isZh -> "多云"; isJa -> "曇り"; isKo -> "흐림"
+                isDe -> "Bewölkt"; isFr -> "Nuageux"; isEs -> "Nublado"
+                isPt -> "Nublado"; isRu -> "Облачно"; isIt -> "Nuvoloso"
+                isNl -> "Bewolkt"; isAr -> "غائم"; isTr -> "Bulutlu"
+                isId -> "Berawan"; isTh -> "มีเมฆ"; isVi -> "Nhiều mây"
+                isPl -> "Pochmurno"; else -> "Cloudy"
+            }
         }
     }
 
-    // ─── 天气获取（保持原样）─────────────────────────────────────────────────
+    // ─── 天气获取 ─────────────────────────────────────────────────────────────
 
     suspend fun fetchWeatherForCityOnline(
         city: String? = null,
@@ -136,12 +222,20 @@ class WeatherRepository(
         )
     }
 
+    /**
+     * QWeather Worker 天气查询。
+     * 传入系统语言 lang 参数，Worker 在服务端把它转为 QWeather 官方语言码，
+     * 直接返回本地化的天气描述（text 字段），客户端无需任何翻译逻辑。
+     * city 参数使用传入值（已是系统语言城市名），不覆盖为 QWeather 返回的名称。
+     */
     private suspend fun fetchFromQWeather(
         city: String, lat: Double, lng: Double,
         country: String, admin: String
     ): WeatherFetchResult? {
         try {
-            val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(city, "UTF-8")}"
+            val lang = getSystemLangTag()
+            val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(city, "UTF-8")}&lang=${URLEncoder.encode(lang, "UTF-8")}"
+            android.util.Log.d("WeatherRepository", "QWeather 请求：city=$city lang=$lang")
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
@@ -151,15 +245,17 @@ class WeatherRepository(
                 if (jsonObj.optBoolean("success", false)) {
                     val weather = jsonObj.getJSONObject("weather")
                     val temp = weather.optString("temp")
-                    val text = weather.optString("text")
+                    val text = weather.optString("text") // 已由 Worker 本地化
                     val formattedTemp = "$temp°C"
                     prefs.customWeather = text
                     prefs.customTemp = formattedTemp
                     prefs.lastWeatherUpdateTime = System.currentTimeMillis()
                     return WeatherFetchResult(
-                        city = jsonObj.optString("city", city),
-                        weatherText = text, weatherTemp = formattedTemp,
-                        lat = lat, lng = lng,
+                        city = city, // 用传入的系统语言城市名，不覆盖
+                        weatherText = text,
+                        weatherTemp = formattedTemp,
+                        lat = lat,
+                        lng = lng,
                         country = jsonObj.optString("country", country),
                         admin = jsonObj.optString("province", admin),
                         isUpdated = true
@@ -167,7 +263,7 @@ class WeatherRepository(
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("WeatherRepository", "Worker fetch failed: ${e.message}")
+            android.util.Log.e("WeatherRepository", "QWeather fetch failed: ${e.message}")
         }
         return null
     }
@@ -188,7 +284,7 @@ class WeatherRepository(
                     val currentObj = jsonObj.getJSONObject("current")
                     val temp = currentObj.optDouble("temperature_2m")
                     val code = currentObj.optInt("weather_code")
-                    val translatedCond = translateWeatherCode(code)
+                    val translatedCond = translateWeatherCode(code) // 跟随系统语言
                     val formattedTemp = "${Math.round(temp)}°C"
                     prefs.customWeather = translatedCond
                     prefs.customTemp = formattedTemp
@@ -202,7 +298,7 @@ class WeatherRepository(
         } catch (e: Exception) {
             android.util.Log.e("WeatherRepository", "Open-Meteo forecast failed: ${e.message}")
         }
-        val text = prefs.customWeather.ifEmpty { "多云" }
+        val text = prefs.customWeather.ifEmpty { translateWeatherCode(2) }
         val temp = prefs.customTemp.ifEmpty { "18°C" }
         return WeatherFetchResult(
             city = city, weatherText = text, weatherTemp = temp,
@@ -210,15 +306,7 @@ class WeatherRepository(
         )
     }
 
-    // ─── 城市搜索：一级 city-search-worker（带系统语言 fallback 链）──────────
-    //
-    // Worker 端已实现完整 fallback 链：
-    //   zh-CN  → zh-Hans → zh-CN → zh → en
-    //   zh-TW  → zh-TW   → zh-Hant → zh → en
-    //   zh-HK  → zh-HK   → zh-Hant → zh → en
-    //   en-*   → en → zh
-    //   ja/ko/其他 → 目标语言 → en
-    // 每个城市在 Worker 内已去重，只返回 fallback 链里最优语言的名字。
+    // ─── 城市搜索：一级 city-search-worker ───────────────────────────────────
     private suspend fun searchFromCityWorker(query: String): List<CityItem> {
         return try {
             val encoded = URLEncoder.encode(query.trim(), "UTF-8")
@@ -230,7 +318,6 @@ class WeatherRepository(
             conn.readTimeout = 4000
             if (conn.responseCode == 200) {
                 val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                android.util.Log.d("WeatherRepository", "城市一级：HTTP 状态码=200")
                 val arr = org.json.JSONArray(resp)
                 android.util.Log.d("WeatherRepository", "城市一级：解析出 ${arr.length()} 条结果")
                 val list = mutableListOf<CityItem>()
@@ -261,11 +348,12 @@ class WeatherRepository(
         }
     }
 
-    // ─── 城市搜索：二级兜底 —— 用用户输入直接查 QWeather，能查到才显示 ────────
+    // ─── 城市搜索：二级兜底 —— QWeather Worker 直查（带 lang 参数）──────────
     private suspend fun searchFromQWeatherDirect(query: String): CityItem? {
         return try {
-            val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(query.trim(), "UTF-8")}"
-            android.util.Log.d("WeatherRepository", "城市二级：请求 QWeather Worker，query=$query")
+            val lang = getSystemLangTag()
+            val workerUrl = "https://qweather.charlosh.qzz.io/?city=${URLEncoder.encode(query.trim(), "UTF-8")}&lang=${URLEncoder.encode(lang, "UTF-8")}"
+            android.util.Log.d("WeatherRepository", "城市二级：请求 QWeather Worker，query=$query lang=$lang")
             val conn = URL(workerUrl).openConnection() as HttpURLConnection
             conn.connectTimeout = 4000
             conn.readTimeout = 4000
@@ -273,13 +361,12 @@ class WeatherRepository(
                 val resp = conn.inputStream.bufferedReader().use { it.readText() }
                 val jsonObj = JSONObject(resp)
                 if (jsonObj.optBoolean("success", false)) {
-                    // QWeather 查到了，把它作为唯一候选项返回
                     val cityName = jsonObj.optString("city", query)
                     val country  = jsonObj.optString("country", "")
                     val province = jsonObj.optString("province", "")
                     android.util.Log.d("WeatherRepository", "城市二级：QWeather 命中，city=$cityName")
                     CityItem(
-                        name       = if (province.isNotEmpty() && province != cityName) "$cityName ($province)" else cityName,
+                        name       = cityName,
                         city       = cityName,
                         pinyin     = "",
                         initials   = "",
@@ -303,7 +390,7 @@ class WeatherRepository(
         }
     }
 
-    // ─── 城市搜索：三级兜底 —— OpenMeteo Geocoding，使用系统语言 ─────────────
+    // ─── 城市搜索：三级兜底 —— OpenMeteo Geocoding ────────────────────────────
     private suspend fun searchFromOpenMeteoGeo(query: String): List<CityItem> {
         val openMeteoLang = getOpenMeteoLang()
         val list = mutableListOf<CityItem>()
@@ -327,13 +414,8 @@ class WeatherRepository(
                         val latitude   = if (rObj.has("latitude")) rObj.optDouble("latitude") else null
                         val longitude  = if (rObj.has("longitude")) rObj.optDouble("longitude") else null
                         val pop        = if (rObj.has("population")) rObj.optLong("population") else 0L
-                        val formattedName = when {
-                            rCountry.isNotEmpty() && rCountry != "中国" -> "$cityName, $rCountry"
-                            adminState.isNotEmpty() && adminState != cityName -> "$cityName ($adminState)"
-                            else -> cityName
-                        }
                         list.add(CityItem(
-                            name = formattedName, city = cityName,
+                            name = cityName, city = cityName,
                             pinyin = "", initials = "",
                             lat = latitude, lng = longitude, population = pop,
                             country = rCountry, admin = adminState
@@ -346,28 +428,14 @@ class WeatherRepository(
         } catch (e: Exception) {
             android.util.Log.e("WeatherRepository", "城市三级：异常 ${e.message}")
         }
-        // 按城市名去重，人口降序
         return list.distinctBy { it.name }.sortedByDescending { it.population ?: 0L }
     }
 
-    // ─── 城市搜索主入口：三级严格互斥 ───────────────────────────────────────
-    //
-    // 一级：city-search-worker D1 搜索（多语言 fallback，每城市只返回最优名）
-    //       → 有结果：直接返回候选列表给用户选择（结束）
-    //       → 无结果：进二级
-    //
-    // 二级：把用户输入传给 QWeather Worker 直接查天气
-    //       → QWeather 查到：把该城市作为唯一候选项返回给用户（结束）
-    //       → 未查到：进三级
-    //
-    // 三级：OpenMeteo Geocoding 搜索城市列表
-    //       → 有结果：去重后返回候选列表给用户选择（结束）
-    //       → 无结果：返回空列表（界面显示"未找到"）
+    // ─── 城市搜索主入口 ───────────────────────────────────────────────────────
     suspend fun searchCityGeo(query: String): List<CityItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        // 一级
         val workerResults = searchFromCityWorker(trimmed)
         if (workerResults.isNotEmpty()) {
             android.util.Log.d("WeatherRepository", "城市搜索：一级命中，返回 ${workerResults.size} 条")
@@ -375,7 +443,6 @@ class WeatherRepository(
         }
         android.util.Log.w("WeatherRepository", "城市搜索：一级无结果，进入二级")
 
-        // 二级
         val qWeatherItem = searchFromQWeatherDirect(trimmed)
         if (qWeatherItem != null) {
             android.util.Log.d("WeatherRepository", "城市搜索：二级命中，返回 1 条")
@@ -383,13 +450,12 @@ class WeatherRepository(
         }
         android.util.Log.w("WeatherRepository", "城市搜索：二级无结果，进入三级")
 
-        // 三级
         val openMeteoResults = searchFromOpenMeteoGeo(trimmed)
         android.util.Log.d("WeatherRepository", "城市搜索：三级返回 ${openMeteoResults.size} 条")
-        return@withContext openMeteoResults  // 空列表也直接返回，界面显示"未找到"
+        return@withContext openMeteoResults
     }
 
-    // ─── resolveCityDetails：使用系统语言 ────────────────────────────────────
+    // ─── resolveCityDetails ───────────────────────────────────────────────────
     suspend fun resolveCityDetails(query: String): CityItem? = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext null
@@ -412,14 +478,9 @@ class WeatherRepository(
                         val longitude = first.optDouble("longitude")
                         val rCountry  = first.optString("country")
                         val rAdmin    = first.optString("admin1")
-                        val finalCity = when {
-                            rCountry.isNotEmpty() && rCountry != "中国" -> "$name, $rCountry"
-                            rAdmin.isNotEmpty() && rAdmin != name -> "$name ($rAdmin)"
-                            else -> name
-                        }
-                        android.util.Log.d("WeatherRepository", "resolveCityDetails：成功 name=$finalCity lat=$latitude lng=$longitude")
+                        android.util.Log.d("WeatherRepository", "resolveCityDetails：成功 name=$name lat=$latitude lng=$longitude")
                         return@withContext CityItem(
-                            name = finalCity, city = name, pinyin = "", initials = "",
+                            name = name, city = name, pinyin = "", initials = "",
                             lat = latitude, lng = longitude,
                             population = first.optLong("population", 0L),
                             country = rCountry, admin = rAdmin
@@ -433,7 +494,7 @@ class WeatherRepository(
         null
     }
 
-    // ─── 手机定位反查城市名（使用系统语言）────────────────────────────────────
+    // ─── 手机定位反查城市名 ───────────────────────────────────────────────────
     suspend fun reverseGeocode(lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
         val nominatimLang = getOpenMeteoLang()
         try {
@@ -453,7 +514,6 @@ class WeatherRepository(
                         .ifEmpty { addr.optString("suburb", "") }
                         .ifEmpty { addr.optString("county", "") }
                         .ifEmpty { addr.optString("state", "") }
-                    // 只在中文下去掉行政单位后缀
                     val cleanCity = if (nominatimLang == "zh") {
                         rawCity.replace("市", "").replace("区", "").replace("县", "")
                     } else rawCity
@@ -464,7 +524,6 @@ class WeatherRepository(
             android.util.Log.e("WeatherRepository", "OSM Nominatim reverseGeocode failed: ${e.message}")
         }
 
-        // Fallback to Android Geocoder（使用系统 Locale，不写死中文）
         try {
             val geocoder = android.location.Geocoder(context, Locale.getDefault())
             val addresses = geocoder.getFromLocation(lat, lon, 1)

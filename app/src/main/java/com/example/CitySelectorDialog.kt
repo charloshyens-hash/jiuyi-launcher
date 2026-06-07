@@ -199,194 +199,199 @@ fun CitySelectorDialog(
                                 imageVector = Icons.Default.Place,
                                 contentDescription = "定位销柱",
                                 tint = Color(0xFFFF5252),
-                                modifier = Modifier.size(15.dp).align(Alignment.Center).offset(y = (-4).dp)
+                                modifier = Modifier.size(15.dp).align(Alignment.Center).offset(y = (-2).dp)
                             )
                         }
                     }
                 }
 
-                if (searchText.trim().isNotEmpty()) {
-                    Text(
-                        text = "全局定位检索匹配站点（含中文自建与全球索引）：",
-                        color = themeColor.copy(alpha = 0.8f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-
-                    androidx.compose.foundation.lazy.LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                    ) {
-                        item {
+                AnimatedContent(
+                    targetState = searchText.isNotEmpty(),
+                    transitionSpec = {
+                        fadeIn() togetherWith fadeOut()
+                    },
+                    label = "SearchVsDefault"
+                ) { isSearching ->
+                    if (isSearching) {
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                        ) {
                             val customStr = searchText.trim()
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.searchAndSelectCity(customStr)
-                                        viewModel.showCitySelectorDialog = false
-                                    }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddLocation,
-                                    contentDescription = "使用自定义输入",
-                                    tint = themeColor,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "直接使用自定义地名: \"$customStr\"",
-                                    color = themeColor,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            item {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.selectCityAndSimulateWeather(customStr, null, null, null, null, query = searchText)
+                                            viewModel.showCitySelectorDialog = false
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "自定义",
+                                        tint = themeColor,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "直接使用自定义地名: \"$customStr\"",
+                                        color = themeColor,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
-                        }
 
-                        items(searchResults.size) { i ->
-                            val item = searchResults[i]
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.selectCityAndSimulateWeather(item.name, item.lat, item.lng, item.country, item.admin, query = searchText)
-                                        viewModel.showCitySelectorDialog = false
+                            items(searchResults.size) { i ->
+                                val item = searchResults[i]
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            // ★ 改动1：传 item.city（纯城市名）而非 item.name
+                                            viewModel.selectCityAndSimulateWeather(item.city, item.lat, item.lng, item.country, item.admin, query = searchText)
+                                            viewModel.showCitySelectorDialog = false
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp)
+                                ) {
+                                    // ★ 改动2：图标统一，显示格式改为 城市 - 省（州） - 国家
+                                    Icon(
+                                        imageVector = Icons.Default.LocationCity,
+                                        contentDescription = "城市",
+                                        tint = themeColor.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        val displayParts = listOfNotNull(
+                                            item.city.takeIf { it.isNotEmpty() },
+                                            item.admin.takeIf { !it.isNullOrEmpty() && it != item.city },
+                                            item.country.takeIf { !it.isNullOrEmpty() }
+                                        )
+                                        Text(
+                                            text = displayParts.joinToString(" - "),
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (item.name == item.city) Icons.Default.LocationCity else Icons.Default.Landscape,
-                                    contentDescription = "类型",
-                                    tint = themeColor.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (item.name == item.city) {
-                                        item.city
-                                    } else if (item.name.contains(item.city, ignoreCase = true)) {
-                                        item.name
-                                    } else {
-                                        "${item.name} (${item.city})"
-                                    },
-                                    color = Color.White,
-                                    fontSize = 13.sp
-                                )
+                                }
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                         }
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 240.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        if (recentCitiesList.isNotEmpty()) {
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            if (recentCitiesList.isNotEmpty()) {
+                                Text(
+                                    text = "常用城市",
+                                    color = themeColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = 6.dp, top = 2.dp)
+                                )
+                                val chunkedRecent = recentCitiesList.chunked(4)
+                                for (row in chunkedRecent) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        for (j in 0 until 4) {
+                                            if (j < row.size) {
+                                                val c = row[j]
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(34.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(themeColor.copy(alpha = 0.15f))
+                                                        .border(BorderStroke(1.dp, themeColor.copy(alpha = 0.25f)), RoundedCornerShape(8.dp))
+                                                        .clickable {
+                                                            viewModel.searchAndSelectCity(c.query)
+                                                            viewModel.showCitySelectorDialog = false
+                                                        },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = c.name,
+                                                        color = Color.White,
+                                                        fontSize = 11.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.padding(start = 4.dp, end = 16.dp)
+                                                    )
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(24.dp)
+                                                            .align(Alignment.CenterEnd)
+                                                            .clickable {
+                                                                viewModel.prefs.removeRecentCity(c.name)
+                                                                recentCitiesList = viewModel.prefs.getRecentCityObjects()
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = "删除",
+                                                            tint = Color.White.copy(alpha = 0.6f),
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                            }
+
                             Text(
-                                text = "常用城市",
-                                color = themeColor,
+                                text = "热门城市",
+                                color = Color.White.copy(alpha = 0.45f),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = 6.dp, top = 2.dp)
+                                modifier = Modifier.padding(bottom = 6.dp)
                             )
-                            val chunkedRecent = recentCitiesList.chunked(4)
-                            for (row in chunkedRecent) {
+                            val chunkedPop = popularCities.chunked(4)
+                            for (row in chunkedPop) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    for (j in 0 until 4) {
-                                        if (j < row.size) {
-                                            val c = row[j]
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(34.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(themeColor.copy(alpha = 0.15f))
-                                                    .border(BorderStroke(1.dp, themeColor.copy(alpha = 0.25f)), RoundedCornerShape(8.dp))
-                                                    .clickable {
-                                                        viewModel.searchAndSelectCity(c.query)
-                                                        viewModel.showCitySelectorDialog = false
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = c.name,
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.padding(start = 4.dp, end = 16.dp)
-                                                )
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                        .align(Alignment.CenterEnd)
-                                                        .clickable {
-                                                            viewModel.prefs.removeRecentCity(c.name)
-                                                            recentCitiesList = viewModel.prefs.getRecentCityObjects()
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Close,
-                                                        contentDescription = "删除",
-                                                        tint = Color.White.copy(alpha = 0.6f),
-                                                        modifier = Modifier.size(10.dp)
-                                                    )
-                                                }
-                                            }
-                                        } else {
-                                            Spacer(modifier = Modifier.weight(1f))
+                                    for (c in row) {
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(34.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0x0CFFFFFF))
+                                                .clickable {
+                                                    viewModel.searchAndSelectCity(c)
+                                                    viewModel.showCitySelectorDialog = false
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = c,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                         }
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-
-                        Text(
-                            text = "热门城市",
-                            color = Color.White.copy(alpha = 0.45f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        val chunkedPop = popularCities.chunked(4)
-                        for (row in chunkedPop) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                for (c in row) {
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(34.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0x0CFFFFFF))
-                                            .clickable {
-                                                viewModel.searchAndSelectCity(c)
-                                                viewModel.showCitySelectorDialog = false
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = c,
-                                            color = Color.White.copy(alpha = 0.8f),
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
                                     }
                                 }
                             }
