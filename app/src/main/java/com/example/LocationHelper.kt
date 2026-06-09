@@ -84,14 +84,33 @@ fun resolveLocationAndFill(context: Context, viewModel: LauncherViewModel, loc: 
                         val firstResult = resultsArray.getJSONObject(0)
                         val name = firstResult.optString("name")
                         val country = firstResult.optString("country")
-                        val admin = firstResult.optString("admin1")
+                        val admin1 = firstResult.optString("admin1")
+                        val admin2 = firstResult.optString("admin2")
+                        val admin3 = firstResult.optString("admin3")
+                        val admin = if (admin3.isNotEmpty()) admin3 else if (admin2.isNotEmpty()) admin2 else admin1
                         
                         val displayCityName = if (country.isNotEmpty() && country != "中国") {
-                            "$name, $country"
-                        } else if (admin.isNotEmpty() && admin != name) {
-                            "$name ($admin)"
+                            val parent = if (admin1.isNotEmpty() && admin1 != name) admin1 else if (admin2.isNotEmpty() && admin2 != name) admin2 else ""
+                            if (parent.isNotEmpty()) {
+                                "$name, $parent, $country"
+                            } else {
+                                "$name, $country"
+                            }
                         } else {
-                            name
+                            val parent = if (admin3.isNotEmpty() && admin3 != name) {
+                                admin3
+                            } else if (admin2.isNotEmpty() && admin2 != name) {
+                                admin2
+                            } else if (admin1.isNotEmpty() && admin1 != name) {
+                                admin1
+                            } else {
+                                ""
+                            }
+                            if (parent.isNotEmpty()) {
+                                "$name ($parent)"
+                            } else {
+                                name
+                            }
                         }
                         
                         withContext(Dispatchers.Main) {
@@ -111,7 +130,7 @@ fun resolveLocationAndFill(context: Context, viewModel: LauncherViewModel, loc: 
             // If API didn't return search results cleanly, fall back with lat/lng label
             withContext(Dispatchers.Main) {
                 viewModel.selectCityAndSimulateWeather(
-                    city = "当前位置",
+                    city = "%.4f,%.4f".format(java.util.Locale.US, latitude, longitude),
                     lat = latitude,
                     lng = longitude,
                     country = "",
@@ -122,7 +141,7 @@ fun resolveLocationAndFill(context: Context, viewModel: LauncherViewModel, loc: 
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
                 viewModel.selectCityAndSimulateWeather(
-                    city = "当前位置", 
+                    city = "%.4f,%.4f".format(java.util.Locale.US, latitude, longitude), 
                     lat = latitude, 
                     lng = longitude,
                     country = "",

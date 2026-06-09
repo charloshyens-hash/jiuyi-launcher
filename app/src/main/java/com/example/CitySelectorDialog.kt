@@ -218,35 +218,6 @@ fun CitySelectorDialog(
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                         ) {
-                            val customStr = searchText.trim()
-                            item {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.selectCityAndSimulateWeather(customStr, null, null, null, null, query = searchText)
-                                            viewModel.showCitySelectorDialog = false
-                                        }
-                                        .padding(vertical = 10.dp, horizontal = 4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "自定义",
-                                        tint = themeColor,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "直接使用自定义地名: \"$customStr\"",
-                                        color = themeColor,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
-                            }
-
                             items(searchResults.size) { i ->
                                 val item = searchResults[i]
                                 Row(
