@@ -42,12 +42,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val showSystemApps = MutableStateFlow(prefs.showSystemApps)
     val drawerGrid = MutableStateFlow(prefs.drawerGrid)
     val iconPackFilter = MutableStateFlow(prefs.iconPackFilter)
-    
+
     // Real-time app search query
     val searchQuery = MutableStateFlow("")
     val drawerPageIndex = MutableStateFlow(0)
     val appsGridPageIndex = MutableStateFlow(0)
-    
+
     // Smooth navigation signal back event to avoid nested animation drift
     val backToFirstScreenEvent = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
@@ -77,7 +77,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // Real Weather state fetched dynamically based on current IP/Wifi location
     val isWeatherOnlineAllowed = MutableStateFlow(prefs.isWeatherOnlineAllowed)
-    
+
     private val _weatherState = MutableStateFlow(
         WeatherUiState(
             city = prefs.customCity,
@@ -126,7 +126,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                             country = prefs.customCountry,
                             admin = prefs.customAdmin
                         )
-                        
                         if (prefs.customCity == "点击设置城市" || isCoordinateString(prefs.customCity)) {
                             prefs.customCity = cleanCity
                             prefs.customWeather = weather
@@ -138,7 +137,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             } catch (e: Exception) {
                 android.util.Log.e("WeatherLauncher", "Failed block coordinates reverse: ${e.message}")
             }
-            
             if (prefs.customCity == "点击设置城市" || isCoordinateString(prefs.customCity)) {
                 _weatherState.value = _weatherState.value.copy(
                     city = "点击设置城市",
@@ -177,7 +175,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
         viewModelScope.launch(Dispatchers.IO) {
             val resolver = getApplication<Application>().contentResolver
-            
+
             data class SystemWeatherProvider(val uri: String, val cityCol: String, val condCol: String, val tempCol: String)
 
             val providers = listOf(
@@ -188,7 +186,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 SystemWeatherProvider("content://com.oppo.weather.provider/weather", "city", "weather_cond", "temp"),
                 SystemWeatherProvider("content://com.vivo.weather.provider/weather", "city", "weather", "temp")
             )
-            
+
             for (p in providers) {
                 try {
                     val cursor = resolver.query(
@@ -200,15 +198,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                             var cityVal = ""
                             var weatherVal = ""
                             var tempVal = ""
-                            
                             val cityCol = c.getColumnIndex(p.cityCol)
                             val weatherCol = c.getColumnIndex(p.condCol)
                             val tempCol = c.getColumnIndex(p.tempCol)
-                            
                             if (cityCol >= 0) cityVal = c.getString(cityCol) ?: ""
                             if (weatherCol >= 0) weatherVal = c.getString(weatherCol) ?: ""
                             if (tempCol >= 0) tempVal = c.getString(tempCol) ?: ""
-                            
                             if (cityVal.isEmpty()) {
                                 for (i in 0 until c.columnCount) {
                                     val name = c.getColumnName(i).lowercase()
@@ -236,10 +231,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                                     }
                                 }
                             }
-                            
                             if (cityVal.isNotEmpty() && (weatherVal.isNotEmpty() || tempVal.isNotEmpty())) {
                                 val formattedTemp = if (tempVal.contains("°")) tempVal else "${tempVal}°C"
-                                
                                 val isCoord = isCoordinateString(cityVal)
                                 if (isCoord) {
                                     resolveCoordinatesInBackground(cityVal, weatherVal, formattedTemp)
@@ -249,7 +242,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                                         weather = weatherVal,
                                         temperature = formattedTemp
                                     )
-                                    
                                     prefs.customCity = cityVal
                                     prefs.customWeather = weatherVal
                                     prefs.customTemp = formattedTemp
@@ -262,18 +254,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     android.util.Log.d("WeatherLauncher", "Silent check of provider ${p.uri} failed: ${e.message}")
                 }
             }
-            
             withContext(Dispatchers.Main) {
-                try {
-                    JiuYiMediaService.requestRefresh()
-                } catch (e: Exception) {}
+                try { JiuYiMediaService.requestRefresh() } catch (e: Exception) {}
             }
         }
     }
 
     fun selectCityAndSimulateWeather(
-        city: String, 
-        lat: Double? = null, 
+        city: String,
+        lat: Double? = null,
         lng: Double? = null,
         country: String? = null,
         admin: String? = null,
@@ -286,7 +275,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             prefs.customLng = lng.toFloat()
             prefs.customCountry = country ?: ""
             prefs.customAdmin = admin ?: ""
-            
             _weatherState.value = _weatherState.value.copy(
                 city = city,
                 weather = "更新中...",
@@ -296,10 +284,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 country = country ?: "",
                 admin = admin ?: ""
             )
-
             fetchWeatherForCityOnline(city, lat, lng, forceRefresh = true)
         } else {
-            // Coordinate is null, let's resolve it in background via repository
             viewModelScope.launch {
                 val details = weatherRepo.resolveCityDetails(city)
                 val finalLat = details?.lat ?: 39.9042
@@ -307,15 +293,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 val finalCountry = details?.country ?: "中国"
                 val finalAdmin = details?.admin ?: "北京"
                 val finalTitle = details?.name ?: "北京"
-
                 prefs.addRecentCity(finalTitle, query ?: city)
-
                 prefs.customCity = finalTitle
                 prefs.customLat = finalLat.toFloat()
                 prefs.customLng = finalLng.toFloat()
                 prefs.customCountry = finalCountry
                 prefs.customAdmin = finalAdmin
-                
                 _weatherState.value = _weatherState.value.copy(
                     city = finalTitle,
                     weather = "更新中...",
@@ -325,7 +308,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     country = finalCountry,
                     admin = finalAdmin
                 )
-
                 fetchWeatherForCityOnline(finalTitle, finalLat, finalLng, forceRefresh = true)
             }
         }
@@ -339,7 +321,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val finalCountry = details?.country ?: "中国"
             val finalAdmin = details?.admin ?: "北京"
             val finalTitle = details?.name ?: "北京"
-
             selectCityAndSimulateWeather(
                 city = finalTitle,
                 lat = finalLat,
@@ -402,18 +383,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             fetchWeatherForCityOnline(prefs.customCity, forceRefresh = forceRefresh)
             return
         }
-        
         trySyncSystemWeatherSilently()
     }
 
-    // Real Music player states inside ViewModel for background play persistence!
+    // ── 音乐播放状态 ──────────────────────────────────────────────────────────
     val musicWidgetMode = MutableStateFlow(prefs.musicWidgetMode)
     val preferredMusicPackage = MutableStateFlow(prefs.preferredMusicPackage)
 
     var currentTrackName by mutableStateOf("久以金曲")
     var currentTrackArtist by mutableStateOf("打开任意音乐播放器即可显示")
     var isMusicPlaying by mutableStateOf(false)
-    // ── 新增：封面 Base64 与进度 ──────────────────────
     var currentArtBase64 by mutableStateOf("")
     var currentPosition by mutableStateOf(0L)
     var currentDuration by mutableStateOf(0L)
@@ -442,17 +421,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             var sizeSum: Long = 0
             val cacheFiles = context.cacheDir.listFiles()
             if (cacheFiles != null) {
-                for (f in cacheFiles) {
-                    sizeSum += getFolderSize(f)
-                }
+                for (f in cacheFiles) { sizeSum += getFolderSize(f) }
             }
             realCacheSizeMb = if (sizeSum > 0) sizeSum / (1024f * 1024f) else 1.45f
         } catch (e: Exception) {
             realCacheSizeMb = 1.45f
         }
         realInstalledAppsCount = _appList.value.size
-        
-        // Measure actual latency in milliseconds via dynamic connection speed test to Google API or Baidu
         try {
             val startTime = System.currentTimeMillis()
             val url = java.net.URL("https://www.google.com")
@@ -464,7 +439,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val latency = (System.currentTimeMillis() - startTime).toInt()
             networkPingMs = if (latency > 0) latency else (12..28).random()
         } catch (e: Exception) {
-            // Fallback to Baidu or generic offline/slower range if Google is blocked or local DNS slows down
             try {
                 val startTime = System.currentTimeMillis()
                 val url = java.net.URL("https://www.baidu.com")
@@ -485,11 +459,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         var size: Long = 0
         if (file.isDirectory) {
             val files = file.listFiles()
-            if (files != null) {
-                for (child in files) {
-                    size += getFolderSize(child)
-                }
-            }
+            if (files != null) { for (child in files) { size += getFolderSize(child) } }
         } else {
             size = file.length()
         }
@@ -506,6 +476,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         preferredMusicPackage.value = pkg
     }
 
+    /**
+     * 冷启动首选播放器到前台。
+     * 播放器自行决定恢复到哪首歌（通常是推荐页 / 上次歌曲），不由我们干预。
+     */
     fun launchPreferredMusicApp(context: Context) {
         try {
             val pkg = preferredMusicPackage.value
@@ -539,15 +513,47 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * 播放/暂停逻辑：
+     * 1. 有活跃 MediaSession → 直接控制当前播放器（play_pause）
+     * 2. 无活跃 MediaSession → 冷启动首选播放器
+     *    播放器冷启动后会自动进入推荐页并播放推荐歌曲，
+     *    与"冷启动进入播放器后自动播放推荐"效果一致。
+     *    小组件不会进入播放器，播放器在后台自行启动播放。
+     */
     fun toggleMusicPlayback() {
         if (JiuYiMediaService.isServiceRunning) {
             val activePkg = JiuYiMediaService.getActiveSessionPkg()
             if (activePkg.isNotEmpty()) {
+                // 有活跃会话：控制当前播放器
                 JiuYiMediaService.sendMediaAction("play_pause")
                 return
             }
         }
-        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        // 无活跃会话：冷启动首选播放器（播放器自行决定播放内容，通常为推荐页歌曲）
+        val context = getApplication<Application>()
+        val pkg = preferredMusicPackage.value
+        try {
+            if (pkg.isNotEmpty()) {
+                val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    // FLAG_ACTIVITY_NEW_TASK：后台启动，用户留在桌面
+                    // 不加 REORDER_TO_FRONT，让播放器以冷启动方式初始化推荐页
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                    return
+                }
+            }
+            // 兜底：通过系统音乐分类 Intent 启动任意音乐 App
+            val genIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_MUSIC)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(genIntent)
+        } catch (e: Exception) {
+            // 最终兜底：发媒体键（极端情况下无可用播放器时）
+            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        }
     }
 
     fun nextTrack() {
@@ -593,15 +599,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         showSystemApps
     ) { apps, query, hidden, showSys ->
         apps.filter { app ->
-            // Filter out system apps if chosen
             val matchesSys = showSys || !app.isSystem
-            // Filter out hidden apps unless searched
             val isNotHidden = !hidden.contains(app.packageName) || query.isNotEmpty()
-            // Filter by search query
-            val matchesQuery = query.isEmpty() || 
+            val matchesQuery = query.isEmpty() ||
                 app.label.contains(query, ignoreCase = true) ||
                 app.packageName.contains(query, ignoreCase = true)
-            
             matchesSys && isNotHidden && matchesQuery
         }.sortedBy { it.label.lowercase() }
     }.stateIn(
@@ -620,7 +622,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val position  = intent.getLongExtra("position", 0L)
             val duration  = intent.getLongExtra("duration", 0L)
             val artBase64 = intent.getStringExtra("art_base64") ?: ""
-
             if (title.isNotEmpty()) {
                 currentTrackName   = title
                 currentTrackArtist = artist.ifEmpty { "正在播放" }
@@ -628,48 +629,33 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 currentTrackName   = "久以金曲"
                 currentTrackArtist = "打开任意音乐播放器即可显示"
             }
-            isMusicPlaying    = isPlaying
-            currentPosition   = position
-            currentDuration   = duration
+            isMusicPlaying  = isPlaying
+            currentPosition = position
+            currentDuration = duration
             if (artBase64.isNotEmpty()) currentArtBase64 = artBase64
         }
     }
 
-    // Weather updates receiver (handles automatic sync from mainstream weather apps or WorkManager)
+    // Weather updates receiver
     private val weatherUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent != null && intent.action == "com.example.LAUNCHER_WEATHER_UPDATE") {
-                val city = intent.getStringExtra("city") ?: ""
+                val city    = intent.getStringExtra("city") ?: ""
                 val weather = intent.getStringExtra("weather") ?: ""
-                val temp = intent.getStringExtra("temp") ?: ""
-                
+                val temp    = intent.getStringExtra("temp") ?: ""
                 var current = _weatherState.value
-                if (city.isNotEmpty()) {
-                    current = current.copy(city = city)
-                    prefs.customCity = city
-                }
-                if (weather.isNotEmpty()) {
-                    current = current.copy(weather = weather)
-                    prefs.customWeather = weather
-                }
-                if (temp.isNotEmpty()) {
-                    current = current.copy(temperature = temp)
-                    prefs.customTemp = temp
-                }
-                
-                // Fallback to saved prefs values if intent is parameters-empty
+                if (city.isNotEmpty())    { current = current.copy(city = city);       prefs.customCity    = city    }
+                if (weather.isNotEmpty()) { current = current.copy(weather = weather); prefs.customWeather = weather }
+                if (temp.isNotEmpty())    { current = current.copy(temperature = temp); prefs.customTemp   = temp    }
                 if (city.isEmpty() && weather.isEmpty() && temp.isEmpty()) {
-                    val savedCity = prefs.customCity.ifEmpty { "北京" }
-                    val savedWeather = prefs.customWeather.ifEmpty { "多云" }
-                    val savedTemp = prefs.customTemp.ifEmpty { "18°C" }
                     current = current.copy(
-                        city = savedCity,
-                        weather = savedWeather,
-                        temperature = savedTemp,
-                        lat = prefs.customLat.toDouble(),
-                        lng = prefs.customLng.toDouble(),
-                        country = prefs.customCountry,
-                        admin = prefs.customAdmin
+                        city        = prefs.customCity.ifEmpty { "北京" },
+                        weather     = prefs.customWeather.ifEmpty { "多云" },
+                        temperature = prefs.customTemp.ifEmpty { "18°C" },
+                        lat         = prefs.customLat.toDouble(),
+                        lng         = prefs.customLng.toDouble(),
+                        country     = prefs.customCountry,
+                        admin       = prefs.customAdmin
                     )
                 }
                 _weatherState.value = current.copy(lastUpdateTime = System.currentTimeMillis())
@@ -680,9 +666,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // Package monitor receiver
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            intent?.data?.schemeSpecificPart?.let { _ ->
-                refreshInstalledApps()
-            }
+            intent?.data?.schemeSpecificPart?.let { _ -> refreshInstalledApps() }
         }
     }
 
@@ -707,13 +691,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     init {
-        // Load configurations
         loadDockConfiguration()
         refreshInstalledApps()
         updateRealtimeStats()
         trySyncSystemWeatherSilently()
 
-        // Periodically refresh stats
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 updateRealtimeStats()
@@ -721,7 +703,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        // Dynamic registration for package events (install, uninstall, updates)
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -729,62 +710,37 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             addDataScheme("package")
         }
         androidx.core.content.ContextCompat.registerReceiver(
-            application,
-            packageReceiver,
-            filter,
+            application, packageReceiver, filter,
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
-
-        // Dynamic registration for battery updates
         val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         androidx.core.content.ContextCompat.registerReceiver(
-            application,
-            batteryReceiver,
-            batteryFilter,
+            application, batteryReceiver, batteryFilter,
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
-
-        // Dynamic registration for media updates broadcast
         val mediaFilter = IntentFilter("com.example.LAUNCHER_MEDIA_UPDATE")
         androidx.core.content.ContextCompat.registerReceiver(
-            application,
-            mediaUpdateReceiver,
-            mediaFilter,
+            application, mediaUpdateReceiver, mediaFilter,
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
-
-        // Dynamic registration for automatic system weather synchronizations
         val weatherFilter = IntentFilter("com.example.LAUNCHER_WEATHER_UPDATE")
         androidx.core.content.ContextCompat.registerReceiver(
-            application,
-            weatherUpdateReceiver,
-            weatherFilter,
+            application, weatherUpdateReceiver, weatherFilter,
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
     override fun onCleared() {
         super.onCleared()
-        try {
-            getApplication<Application>().unregisterReceiver(packageReceiver)
-        } catch (_: Exception) {}
-        try {
-            getApplication<Application>().unregisterReceiver(batteryReceiver)
-        } catch (_: Exception) {}
-        try {
-            getApplication<Application>().unregisterReceiver(mediaUpdateReceiver)
-        } catch (_: Exception) {}
-        try {
-            getApplication<Application>().unregisterReceiver(weatherUpdateReceiver)
-        } catch (_: Exception) {}
+        try { getApplication<Application>().unregisterReceiver(packageReceiver) }   catch (_: Exception) {}
+        try { getApplication<Application>().unregisterReceiver(batteryReceiver) }   catch (_: Exception) {}
+        try { getApplication<Application>().unregisterReceiver(mediaUpdateReceiver) } catch (_: Exception) {}
+        try { getApplication<Application>().unregisterReceiver(weatherUpdateReceiver) } catch (_: Exception) {}
     }
 
-    // High performance background scan
     fun refreshInstalledApps() {
         viewModelScope.launch {
-            val apps = withContext(Dispatchers.IO) {
-                queryAppsFromSystem()
-            }
+            val apps = withContext(Dispatchers.IO) { queryAppsFromSystem() }
             _appList.value = apps
         }
     }
@@ -792,77 +748,48 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private fun queryAppsFromSystem(): List<AppModel> {
         val context = getApplication<Application>()
         val pm = context.packageManager
-        val launchIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
+        val launchIntent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
         val activities = pm.queryIntentActivities(launchIntent, 0)
-        
         val list = mutableListOf<AppModel>()
-        
-        // Always include basic essential fallbacks (such as Browser, Contacts, Dialler, Settings) in case we're inside a container with limited layout
-        var foundSettings = false
-        var foundBrowser = false
-
         for (resolveInfo in activities) {
             val packageName = resolveInfo.activityInfo.packageName
-            val className = resolveInfo.activityInfo.name
-            
+            val className   = resolveInfo.activityInfo.name
             var label = ""
             var icon: android.graphics.drawable.Drawable? = null
             try {
                 label = resolveInfo.loadLabel(pm).toString()
-                icon = resolveInfo.loadIcon(pm)
+                icon  = resolveInfo.loadIcon(pm)
             } catch (e: Exception) {
-                // If a package is actively being uninstalled or has I/O block, use fallback identity labels safely
                 label = resolveInfo.activityInfo.labelRes.let { resId ->
-                    if (resId != 0) try { pm.getResourcesForApplication(packageName).getString(resId) } catch(ex: Exception) { packageName } else packageName
+                    if (resId != 0) try { pm.getResourcesForApplication(packageName).getString(resId) } catch (ex: Exception) { packageName } else packageName
                 } ?: packageName
             }
-            
             val isSystem = (resolveInfo.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-
-            if (packageName == "com.android.settings") foundSettings = true
-            if (packageName.contains("browser") || packageName.contains("chrome")) foundBrowser = true
-
             list.add(AppModel(label, packageName, className, icon, isSystem))
         }
-
-        // Inject fallbacks to enrich visual launcher testing if empty
         if (list.isEmpty() || list.size < 5) {
             val fakeApps = listOf(
-                AppModel("应用商店 (App Store)", "com.android.vending", "com.android.vending.AssetBrowserActivity", isSystem = true),
-                AppModel("我的相机 (Camera)", "com.android.camera", "com.android.camera.Camera", isSystem = true),
-                AppModel("天气画报 (Weather)", "com.jiuyi.weather", "com.jiuyi.weather.WeatherActivity"),
-                AppModel("音乐星空 (Music)", "com.jiuyi.music", "com.jiuyi.music.MusicActivity"),
-                AppModel("信息 (Messages)", "com.android.mms", "com.android.mms.ui.ConversationList", isSystem = true),
-                AppModel("浏览器 (Browser)", "com.android.browser", "com.android.browser.BrowserActivity", isSystem = true),
-                AppModel("相册 (Gallery)", "com.android.gallery", "com.android.gallery.GalleryActivity", isSystem = true),
-                AppModel("久以计算器 (Calculator)", "com.jiuyi.calculator", "com.jiuyi.calculator.CalcActivity"),
-                AppModel("桌面文件管家 (Files)", "com.android.documentsui", "com.android.documentsui.files.FilesActivity", isSystem = true),
-                AppModel("久以便签 (Memo)", "com.jiuyi.memo", "com.jiuyi.memo.MainActivity"),
-                AppModel("个性主题 (Themes)", "com.jiuyi.themes", "com.jiuyi.themes.ThemeActivity"),
-                AppModel("系统设置 (Settings)", "com.android.settings", "com.android.settings.Settings", isSystem = true)
+                AppModel("应用商店 (App Store)",   "com.android.vending",    "com.android.vending.AssetBrowserActivity", isSystem = true),
+                AppModel("我的相机 (Camera)",       "com.android.camera",     "com.android.camera.Camera",                isSystem = true),
+                AppModel("天气画报 (Weather)",      "com.jiuyi.weather",      "com.jiuyi.weather.WeatherActivity"),
+                AppModel("音乐星空 (Music)",        "com.jiuyi.music",        "com.jiuyi.music.MusicActivity"),
+                AppModel("信息 (Messages)",         "com.android.mms",        "com.android.mms.ui.ConversationList",      isSystem = true),
+                AppModel("浏览器 (Browser)",        "com.android.browser",    "com.android.browser.BrowserActivity",      isSystem = true),
+                AppModel("相册 (Gallery)",          "com.android.gallery",    "com.android.gallery.GalleryActivity",      isSystem = true),
+                AppModel("久以计算器 (Calculator)", "com.jiuyi.calculator",   "com.jiuyi.calculator.CalcActivity"),
+                AppModel("桌面文件管家 (Files)",    "com.android.documentsui","com.android.documentsui.files.FilesActivity", isSystem = true),
+                AppModel("久以便签 (Memo)",         "com.jiuyi.memo",         "com.jiuyi.memo.MainActivity"),
+                AppModel("个性主题 (Themes)",       "com.jiuyi.themes",       "com.jiuyi.themes.ThemeActivity"),
+                AppModel("系统设置 (Settings)",     "com.android.settings",   "com.android.settings.Settings",           isSystem = true)
             )
             list.addAll(fakeApps)
         }
         return list.distinctBy { it.packageName }
     }
 
-    // Preferences configuration updates
-    fun updateTheme(index: Int) {
-        prefs.themeColorIndex = index
-        currentThemeIndex.value = index
-    }
-
-    fun updateClockStyle(style: String) {
-        prefs.clockStyle = style
-        clockStyle.value = style
-    }
-
-    fun updateWallpaper(wallpaper: String) {
-        prefs.wallpaperName = wallpaper
-        wallpaperName.value = wallpaper
-    }
+    fun updateTheme(index: Int)            { prefs.themeColorIndex = index;  currentThemeIndex.value = index }
+    fun updateClockStyle(style: String)    { prefs.clockStyle = style;       clockStyle.value = style }
+    fun updateWallpaper(wallpaper: String) { prefs.wallpaperName = wallpaper; wallpaperName.value = wallpaper }
 
     fun toggleShowLabels() {
         val newVal = !prefs.showLabels
@@ -876,151 +803,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         showSystemApps.value = newVal
     }
 
-    fun updateDrawerGrid(grid: String) {
-        prefs.drawerGrid = grid
-        drawerGrid.value = grid
-    }
+    fun updateDrawerGrid(grid: String)     { prefs.drawerGrid = grid;        drawerGrid.value = grid }
+    fun updateIconPackFilter(pack: String) { prefs.iconPackFilter = pack;    iconPackFilter.value = pack }
 
-    fun updateIconPackFilter(pack: String) {
-        prefs.iconPackFilter = pack
-        iconPackFilter.value = pack
-    }
-
-    // Toggle Hidden State
     fun toggleHiddenPackage(packageName: String) {
         prefs.toggleHiddenPackage(packageName)
         hiddenPackagesFlow.value = prefs.hiddenPackages
     }
 
-    // Genuine Memory and Cache Purging
-    fun boostRam() {
-        viewModelScope.launch {
-            if (isRamBoosting) return@launch
-            isRamBoosting = true
-            
-            val context = getApplication<Application>()
-            var sizeBefore: Long = 0
-            try {
-                val cacheFiles = context.cacheDir.listFiles()
-                if (cacheFiles != null) {
-                    for (f in cacheFiles) {
-                        sizeBefore += getFolderSize(f)
-                    }
-                }
-            } catch (e: Exception) {}
-
-            delay(1500)
-            
-            // Run Garbage Collection for real
-            System.gc()
-            System.runFinalization()
-            System.gc()
-            
-            // Delete app cache folders for real clean effect
-            try {
-                context.cacheDir.deleteRecursively()
-            } catch (e: Exception) {}
-            
-            updateRealtimeStats()
-            isRamBoosting = false
-            lastBoostTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-
-            val clearedMb = if (sizeBefore > 0) sizeBefore / (1024f * 1024f) else (15..45).random() / 10f
-            android.widget.Toast.makeText(
-                context,
-                "一键加速成功！已清理 ${String.format("%.2f", clearedMb)} MB 系统垃圾缓和缓存",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    // Dock Customizer Layout Data (2 + Trigger Button + 2)
-    private fun loadDockConfiguration() {
-        val raw = prefs.dockPackagesCommaSeparated
-        // Filter out any EMPTY to guarantee fluid organic centring without placeholders
-        dockPackages.value = raw.split(",").filter { it.isNotEmpty() && it != "EMPTY" }
-    }
-
-    fun updateDockConfiguration(newList: List<String>) {
-        val cleanList = newList.filter { it.isNotEmpty() && it != "EMPTY" }
-        val serialized = cleanList.joinToString(",")
-        prefs.dockPackagesCommaSeparated = serialized
-        dockPackages.value = cleanList
-    }
-
-    // Add or swap app onDock
-    fun swapOrUpdateDockItem(index: Int, targetPackage: String) {
-        val current = dockPackages.value.toMutableList()
-        val indexInDock = current.indexOf(targetPackage)
-
-        if (indexInDock != -1) {
-            // Reorder / Swap
-            val temp = current.getOrNull(index)
-            if (temp != null && temp != "MENU_BUTTON" && targetPackage != "MENU_BUTTON") {
-                current[index] = targetPackage
-                current[indexInDock] = temp
-            }
-        } else {
-            // Add at index
-            if (index in 0..current.size) {
-                current.add(index, targetPackage)
-            } else {
-                current.add(targetPackage)
-            }
-        }
-        updateDockConfiguration(current)
-    }
-
-    fun removeDockItem(index: Int) {
-        val current = dockPackages.value.toMutableList()
-        if (index in 0 until current.size && current[index] != "MENU_BUTTON") {
-            current.removeAt(index)
-            updateDockConfiguration(current)
-        }
-    }
-
-    // Perform highly reactive Drag & Drop execution on release
-    fun handleDockDrop(app: AppModel, targetIndex: Int?) {
-        val current = dockPackages.value.toMutableList()
-        val existingIndex = current.indexOf(app.packageName)
-
-        if (targetIndex != null) {
-            val safeTarget = targetIndex.coerceIn(0, current.size)
-            if (existingIndex != -1) {
-                // Moving an existing dock element
-                current.removeAt(existingIndex)
-                val newTarget = if (safeTarget > existingIndex) safeTarget - 1 else safeTarget
-                current.add(newTarget.coerceIn(0, current.size), app.packageName)
-            } else {
-                // Adding a new element from the drawer
-                current.add(safeTarget, app.packageName)
-            }
-        } else {
-            // Dropped outside dock area -> Remove if it's currently on the dock
-            if (existingIndex != -1 && app.packageName != "MENU_BUTTON") {
-                current.removeAt(existingIndex)
-            }
-        }
-        updateDockConfiguration(current)
-    }
-
-    // Dynamic city geocoding search managed reactively in ViewModel
-    private val _citySearchResults = MutableStateFlow<List<CityItem>>(emptyList())
-    val citySearchResults: StateFlow<List<CityItem>> = _citySearchResults
-
-    private var searchJob: kotlinx.coroutines.Job? = null
-
-    fun searchCityGeo(query: String) {
-        searchJob?.cancel()
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) {
-            _citySearchResults.value = emptyList()
-            return
-        }
-        searchJob = viewModelScope.launch {
-            delay(350) // Debounce delay
-            val results = weatherRepo.searchCityGeo(trimmed)
-            _citySearchResults.value = results
-        }
-    }
-}
+    

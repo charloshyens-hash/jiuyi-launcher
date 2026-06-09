@@ -45,7 +45,7 @@ fun LauncherCustomWidgets(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xD90F172A) // Dark Soft Glass
+            containerColor = Color(0xD90F172A)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
     ) {
@@ -56,10 +56,10 @@ fun LauncherCustomWidgets(
                 modifier = Modifier.padding(bottom = 12.dp)
             ) {
                 val headerIcon = when (widgetType) {
-                    "RAM Booster" -> Icons.Default.Speed
+                    "RAM Booster"    -> Icons.Default.Speed
                     "Music Cassette" -> Icons.Default.MusicNote
-                    "Quick Tasks" -> Icons.Default.Checklist
-                    else -> Icons.Default.BatteryChargingFull
+                    "Quick Tasks"    -> Icons.Default.Checklist
+                    else             -> Icons.Default.BatteryChargingFull
                 }
                 Icon(
                     imageVector = headerIcon,
@@ -70,10 +70,10 @@ fun LauncherCustomWidgets(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = when (widgetType) {
-                        "RAM Booster" -> "久以便捷 • 系统内存优化"
+                        "RAM Booster"    -> "久以便捷 • 系统内存优化"
                         "Music Cassette" -> "久以金曲 • 极简流媒体播放器"
-                        "Quick Tasks" -> "久以便捷 • 桌面备忘提醒清单"
-                        else -> "久以能量 • 动力瞬态仪表盘"
+                        "Quick Tasks"    -> "久以便捷 • 桌面备忘提醒清单"
+                        else             -> "久以能量 • 动力瞬态仪表盘"
                     },
                     color = Color.White.copy(alpha = 0.9f),
                     fontSize = 13.sp,
@@ -83,13 +83,14 @@ fun LauncherCustomWidgets(
 
             // Widget Content layouts
             when (widgetType) {
-                "RAM Booster" -> RamBoosterContent(themeColor, viewModel)
+                "RAM Booster"    -> RamBoosterContent(themeColor, viewModel)
                 "Music Cassette" -> MusicCassetteWidget(
                     themeColor = themeColor,
-                    viewModel = viewModel
+                    viewModel  = viewModel,
+                    modifier   = Modifier.fillMaxWidth()   // ← 补充宽度修饰符
                 )
-                "Quick Tasks" -> QuickTasksContent(themeColor)
-                else -> BatteryDashboardContent(themeColor, viewModel)
+                "Quick Tasks"    -> QuickTasksContent(themeColor)
+                else             -> BatteryDashboardContent(themeColor, viewModel)
             }
         }
     }
@@ -108,7 +109,6 @@ fun RamBoosterContent(themeColor: Color, viewModel: LauncherViewModel) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Column: Fluid Percent Progress Circle
         Box(
             modifier = Modifier.size(80.dp),
             contentAlignment = Alignment.Center
@@ -148,7 +148,6 @@ fun RamBoosterContent(themeColor: Color, viewModel: LauncherViewModel) {
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        // Right Column: Info and Clean Launch Action
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (viewModel.isRamBoosting) "正在急速清理废弃缓存..." else "系统运行良好，可清理垃圾 ${String.format("%.2f", viewModel.realCacheSizeMb)} MB",
@@ -164,7 +163,6 @@ fun RamBoosterContent(themeColor: Color, viewModel: LauncherViewModel) {
                 fontSize = 11.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
-            
             Button(
                 onClick = { viewModel.boostRam() },
                 colors = ButtonDefaults.buttonColors(containerColor = themeColor),
@@ -199,8 +197,6 @@ fun RamBoosterContent(themeColor: Color, viewModel: LauncherViewModel) {
     }
 }
 
-
-
 @Composable
 fun QuickTasksContent(themeColor: Color) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -220,7 +216,6 @@ fun QuickTasksContent(themeColor: Color) {
             fontSize = 10.sp,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -230,11 +225,11 @@ fun QuickTasksContent(themeColor: Color) {
                 onValueChange = { newTaskText = it },
                 placeholder = { Text("新增日常清单...", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f)) },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = themeColor,
+                    focusedBorderColor   = themeColor,
                     unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                    focusedContainerColor = Color(0x21000000),
+                    focusedContainerColor   = Color(0x21000000),
                     unfocusedContainerColor = Color(0x14000000),
-                    focusedTextColor = Color.White,
+                    focusedTextColor   = Color.White,
                     unfocusedTextColor = Color.White
                 ),
                 singleLine = true,
@@ -247,9 +242,7 @@ fun QuickTasksContent(themeColor: Color) {
                         keyboardController?.hide()
                     }
                 }),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
+                modifier = Modifier.weight(1f).height(44.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Button(
@@ -268,10 +261,7 @@ fun QuickTasksContent(themeColor: Color) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(16.dp))
             }
         }
-
         Spacer(modifier = Modifier.height(10.dp))
-
-        // Task collection lists
         Column(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.heightIn(max = 120.dp)
@@ -281,9 +271,7 @@ fun QuickTasksContent(themeColor: Color) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            tasks[index] = Pair(task.first, !task.second)
-                        }
+                        .clickable { tasks[index] = Pair(task.first, !task.second) }
                         .padding(vertical = 2.dp)
                 ) {
                     Icon(
@@ -309,15 +297,15 @@ fun QuickTasksContent(themeColor: Color) {
 
 @Composable
 fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
-    val level = viewModel.batteryLevel
+    val level     = viewModel.batteryLevel
     val isCharging = viewModel.isBatteryCharging
-    val temp = viewModel.batteryTemperature
-    val volt = viewModel.batteryVoltage
+    val temp      = viewModel.batteryTemperature
+    val volt      = viewModel.batteryVoltage
 
     val infiniteTransition = rememberInfiniteTransition(label = "powerPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
-        targetValue = 1.0f,
+        targetValue  = 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(1500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
@@ -329,7 +317,6 @@ fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Glowing Battery outline
         Box(
             modifier = Modifier
                 .width(100.dp)
@@ -337,7 +324,6 @@ fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White.copy(alpha = 0.05f))
                 .drawBehind {
-                    // Draw filled power indicator matching real battery
                     val pct = level / 100f
                     val powerFillWidth = size.width * pct
                     drawRect(
@@ -345,7 +331,10 @@ fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
                             colors = listOf(themeColor, themeColor.copy(alpha = 0.7f))
                         ),
                         topLeft = Offset(2.dp.toPx(), 2.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size((powerFillWidth - 4.dp.toPx()).coerceAtLeast(0f), size.height - 4.dp.toPx())
+                        size = androidx.compose.ui.geometry.Size(
+                            (powerFillWidth - 4.dp.toPx()).coerceAtLeast(0f),
+                            size.height - 4.dp.toPx()
+                        )
                     )
                 },
             contentAlignment = Alignment.Center
@@ -357,10 +346,7 @@ fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
                 fontWeight = FontWeight.Bold
             )
         }
-
         Spacer(modifier = Modifier.width(16.dp))
-
-        // Telemetry details list
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -372,7 +358,7 @@ fun BatteryDashboardContent(themeColor: Color, viewModel: LauncherViewModel) {
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(text = "系统功耗: ${String.format("%.2f", volt)}V 正常", color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp)
             }
-            Text(text = "电池健康度: 100% (良好)", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
+            Text(text = "电池健康度: 100% (良好)",                          color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
             Text(text = "温度: ${String.format("%.1f", temp)}°C / 正常状态", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
         }
     }

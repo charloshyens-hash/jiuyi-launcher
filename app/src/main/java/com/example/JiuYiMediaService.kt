@@ -1,5 +1,6 @@
 package com.example
 
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -34,6 +35,11 @@ class JiuYiMediaService : NotificationListenerService() {
             return instance?.activeController?.packageName ?: ""
         }
 
+        /** 返回当前活跃播放器的 sessionActivity（用于唤醒到前台不切歌） */
+        fun getSessionActivity(): PendingIntent? {
+            return instance?.activeController?.sessionActivity
+        }
+
         fun requestRefresh() {
             instance?.sendUpdate()
         }
@@ -47,14 +53,8 @@ class JiuYiMediaService : NotificationListenerService() {
         sessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
 
         controllerListener = object : MediaController.Callback() {
-            override fun onMetadataChanged(metadata: MediaMetadata?) {
-                sendUpdate()
-            }
-
-            override fun onPlaybackStateChanged(state: PlaybackState?) {
-                sendUpdate()
-            }
-
+            override fun onMetadataChanged(metadata: MediaMetadata?) { sendUpdate() }
+            override fun onPlaybackStateChanged(state: PlaybackState?) { sendUpdate() }
             override fun onSessionDestroyed() {
                 activeController = null
                 updateActiveController()
@@ -205,7 +205,7 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
-    // ── 核心广播：新增封面 Base64 + 播放进度 ──────────────────────────────────
+    // ── 核心广播：封面 Base64 + 播放进度 ──────────────────────────────────────
     private fun sendUpdate() {
         val controller = activeController
         val metadata = controller?.metadata
@@ -217,19 +217,15 @@ class JiuYiMediaService : NotificationListenerService() {
         val position = state?.position ?: 0L
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
 
-        // 专辑封面：优先 METADATA_KEY_ART，其次 METADATA_KEY_ALBUM_ART
         val artBitmap: Bitmap? = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
         val artBase64: String = if (artBitmap != null) {
             try {
                 val stream = ByteArrayOutputStream()
-                // 缩放到 128×128 以减少广播体积
                 val scaled = Bitmap.createScaledBitmap(artBitmap, 128, 128, true)
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, stream)
                 Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-            } catch (e: Exception) {
-                ""
-            }
+            } catch (e: Exception) { "" }
         } else ""
 
         val intent = Intent(ACTION_MEDIA_UPDATE).apply {
@@ -240,7 +236,7 @@ class JiuYiMediaService : NotificationListenerService() {
             putExtra("packageName", controller?.packageName ?: "")
             putExtra("position", position)
             putExtra("duration", duration)
-            putExtra("art_base64", artBase64)        // 新增：专辑封面 Base64
+            putExtra("art_base64", artBase64)
         }
         sendBroadcast(intent)
     }
