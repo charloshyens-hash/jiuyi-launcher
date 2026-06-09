@@ -1,6 +1,5 @@
 package com.example
 
-import android.content.ComponentName
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.provider.Settings
@@ -34,25 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
-/**
- * Music Cassette 主面板。
- *
- * 架构原则：
- * - 久以桌面仅作为 Android 系统媒体控制组件
- * - 通过 MediaSession / NotificationListenerService 读取播放信息
- * - 禁止内置任何音乐资源或破解任何第三方 API
- *
- * 授权策略：
- * - 不弹自定义授权弹窗；未授权时整个小组件可点击，直接跳系统通知访问设置页
- * - 授权后自动生效，无需重启
- *
- * 交互：
- * - 无活跃会话时点播放 → 冷启动首选播放器（播放器自行决定播放内容）
- * - 有活跃会话时点播放 → 控制当前播放器播放/暂停
- * - 点封面 / 歌曲名 → 通过 sessionActivity 唤醒当前播放器到前台（不切歌）
- * - 长按卡片 → 展开进度条 + 时间
- */
 @Composable
 fun MusicCassetteWidget(
     themeColor: Color,
@@ -61,12 +45,20 @@ fun MusicCassetteWidget(
 ) {
     val context = LocalContext.current
 
-    // ── 授权状态（每次重组时实时检查，从设置页返回后自动刷新） ──────────────
-    val hasPermission by remember {
-        derivedStateOf { isNotificationListenerEnabled(context) }
+    // ── 授权状态：用 mutableStateOf + lifecycle resume 事件主动刷新 ──────────
+    var hasPermission by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasPermission = isNotificationListenerEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ── 播放信息（来自 ViewModel，由广播更新） ───────────────────────────────
+    // ── 播放信息 ─────────────────────────────────────────────────────────────
     val isPlaying   = viewModel.isMusicPlaying
     val trackName   = viewModel.currentTrackName
     val trackArtist = viewModel.currentTrackArtist
@@ -74,11 +66,9 @@ fun MusicCassetteWidget(
     val position    = viewModel.currentPosition
     val duration    = viewModel.currentDuration
 
-    // 判断当前是否有活跃的媒体会话（有曲名且服务在运行）
     val hasActiveSession = JiuYiMediaService.isServiceRunning &&
             JiuYiMediaService.getActiveSessionPkg().isNotEmpty()
 
-    // 解码专辑封面
     val artBitmap = remember(artBase64) {
         if (artBase64.isNotEmpty()) {
             try {
@@ -100,19 +90,19 @@ fun MusicCassetteWidget(
         label = "vinylAngle"
     )
 
-    // ── 展开/折叠详情 ─────────────────────────────────────────────────────────
     var isExpanded by remember { mutableStateOf(false) }
 
-    // ── 未授权：整个卡片点击跳授权，不弹自定义弹窗 ──────────────────────────
+    // ── 未授权：整个卡片点击跳授权设置 ──────────────────────────────────────
     if (!hasPermission) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .clickable {
                     try {
-                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(intent)
+                        context.startActivity(
+                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
                     } catch (e: Exception) {
                         try {
                             context.startActivity(
@@ -130,7 +120,6 @@ fun MusicCassetteWidget(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // 静态黑胶占位
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -160,7 +149,7 @@ fun MusicCassetteWidget(
         return
     }
 
-    // ── 已授权：正常卡片 ──────────────────────────────────────────────────────
+    // ── 已授权：完整播放器卡片 ────────────────────────────────────────────────
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -170,12 +159,11 @@ fun MusicCassetteWidget(
                 )
             }
     ) {
-        // 主行：封面 + 歌曲信息 + 控制按钮
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 封面 / 黑胶唱片（点击 → 唤醒当前播放器到前台，不切歌）
+            // 封面（点击唤醒播放器，不切歌）
             Box(
                 modifier = Modifier
                     .size(64.dp)
@@ -204,7 +192,7 @@ fun MusicCassetteWidget(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // 歌曲信息（点击 → 唤醒当前播放器到前台，不切歌）
+            // 歌曲信息（点击唤醒播放器，不切歌）
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -230,7 +218,7 @@ fun MusicCassetteWidget(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // 控制按钮区（完全隔离于点击跳转区域）
+            // 控制按钮：上一首 / 播放·暂停 / 下一首
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -248,7 +236,6 @@ fun MusicCassetteWidget(
                     )
                 }
 
-                // 播放 / 暂停（无活跃会话时冷启动播放器；有则控制当前播放器）
                 IconButton(
                     onClick = { viewModel.toggleMusicPlayback() },
                     modifier = Modifier
@@ -278,7 +265,7 @@ fun MusicCassetteWidget(
             }
         }
 
-        // ── 展开区域：进度条 + 时间（长按触发） ─────────────────────────────
+        // 展开区域：进度条 + 时间（长按触发）
         if (isExpanded && duration > 0L) {
             Spacer(modifier = Modifier.height(12.dp))
             PlaybackProgressBar(
@@ -290,20 +277,13 @@ fun MusicCassetteWidget(
     }
 }
 
-/**
- * 唤醒当前播放器到前台（不切歌）。
- * 优先使用 sessionActivity（MediaSession 提供的原生跳转 Intent），
- * 降级才用 getLaunchIntentForPackage（冷启动入口）。
- */
 private fun bringPlayerToFront(context: android.content.Context, viewModel: LauncherViewModel) {
     try {
-        // 1. 优先：通过 sessionActivity 唤醒，保持播放器当前页面和播放状态
         val sessionActivity = JiuYiMediaService.getSessionActivity()
         if (sessionActivity != null) {
             sessionActivity.send()
             return
         }
-        // 2. 降级：通过包名启动（播放器自行恢复上次状态）
         val pkg = JiuYiMediaService.getActiveSessionPkg().ifEmpty {
             viewModel.preferredMusicPackage.value
         }
@@ -319,7 +299,6 @@ private fun bringPlayerToFront(context: android.content.Context, viewModel: Laun
     }
 }
 
-// ── 黑胶唱片占位符 ─────────────────────────────────────────────────────────────
 @Composable
 private fun VinylPlaceholder(themeColor: Color) {
     Box(
@@ -327,10 +306,7 @@ private fun VinylPlaceholder(themeColor: Color) {
             .fillMaxSize()
             .background(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        themeColor.copy(alpha = 0.6f),
-                        Color.Black
-                    )
+                    colors = listOf(themeColor.copy(alpha = 0.6f), Color.Black)
                 ),
                 shape = CircleShape
             ),
@@ -342,7 +318,6 @@ private fun VinylPlaceholder(themeColor: Color) {
     }
 }
 
-// ── 播放进度条 ─────────────────────────────────────────────────────────────────
 @Composable
 private fun PlaybackProgressBar(position: Long, duration: Long, themeColor: Color) {
     val progress = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
@@ -361,7 +336,6 @@ private fun PlaybackProgressBar(position: Long, duration: Long, themeColor: Colo
     }
 }
 
-// ── 媒体控制按钮（通用） ──────────────────────────────────────────────────────
 @Composable
 private fun MediaControlButton(
     onClick: () -> Unit,
@@ -376,7 +350,6 @@ private fun MediaControlButton(
     ) { content() }
 }
 
-// ── 工具：检查 NotificationListenerService 是否已授权 ────────────────────────
 fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
     return try {
         val flat = Settings.Secure.getString(
@@ -386,7 +359,6 @@ fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
     } catch (e: Exception) { false }
 }
 
-// ── 工具：毫秒 → mm:ss ────────────────────────────────────────────────────────
 private fun formatDuration(ms: Long): String {
     if (ms <= 0L) return "0:00"
     val totalSec = ms / 1000
