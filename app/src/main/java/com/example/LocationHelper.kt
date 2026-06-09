@@ -66,89 +66,71 @@ fun getCurrentLocationAndFill(context: Context, viewModel: LauncherViewModel) {
 }
 
 fun resolveLocationAndFill(context: Context, viewModel: LauncherViewModel, loc: Location) {
-    val latitude = loc.latitude
+    val latitude  = loc.latitude
     val longitude = loc.longitude
     viewModel.viewModelScope.launch(Dispatchers.IO) {
         try {
-            val reverseUrl = "https://geocoding-api.open-meteo.com/v1/reverse?latitude=$latitude&longitude=$longitude&language=zh"
-            val url = java.net.URL(reverseUrl)
+            val lang = java.util.Locale.getDefault().toLanguageTag()  // 如 zh-CN、en-US
+            val weatherUrl = "https://qweather.charlosh.qzz.io/?lat=$latitude&lon=$longitude&lang=$lang"
+            val url  = java.net.URL(weatherUrl)
             val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 4000
-            conn.readTimeout = 4000
+            conn.connectTimeout = 6000
+            conn.readTimeout    = 6000
+
             if (conn.responseCode == 200) {
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val resp    = conn.inputStream.bufferedReader().use { it.readText() }
                 val jsonObj = org.json.JSONObject(resp)
-                if (jsonObj.has("results")) {
-                    val resultsArray = jsonObj.getJSONArray("results")
-                    if (resultsArray.length() > 0) {
-                        val firstResult = resultsArray.getJSONObject(0)
-                        val name = firstResult.optString("name")
-                        val country = firstResult.optString("country")
-                        val admin1 = firstResult.optString("admin1")
-                        val admin2 = firstResult.optString("admin2")
-                        val admin3 = firstResult.optString("admin3")
-                        val admin = if (admin3.isNotEmpty()) admin3 else if (admin2.isNotEmpty()) admin2 else admin1
-                        
-                        val displayCityName = if (country.isNotEmpty() && country != "中国") {
-                            val parent = if (admin1.isNotEmpty() && admin1 != name) admin1 else if (admin2.isNotEmpty() && admin2 != name) admin2 else ""
-                            if (parent.isNotEmpty()) {
-                                "$name, $parent, $country"
-                            } else {
-                                "$name, $country"
-                            }
-                        } else {
-                            val parent = if (admin3.isNotEmpty() && admin3 != name) {
-                                admin3
-                            } else if (admin2.isNotEmpty() && admin2 != name) {
-                                admin2
-                            } else if (admin1.isNotEmpty() && admin1 != name) {
-                                admin1
-                            } else {
-                                ""
-                            }
-                            if (parent.isNotEmpty()) {
-                                "$name ($parent)"
-                            } else {
-                                name
-                            }
-                        }
-                        
-                        withContext(Dispatchers.Main) {
-                            viewModel.selectCityAndSimulateWeather(
-                                city = displayCityName,
-                                lat = latitude,
-                                lng = longitude,
-                                country = country,
-                                admin = admin
-                            )
-                            viewModel.showCitySelectorDialog = false
-                        }
-                        return@launch
+
+                if (jsonObj.optBoolean("success", false)) {
+                    val cityName = jsonObj.optString("city")
+                    val province = jsonObj.optString("province")
+                    val country  = jsonObj.optString("country")
+
+                    val displayCityName = when {
+                        cityName.isEmpty() -> "%.4f,%.4f".format(latitude, longitude)
+                        country != "中国" && country.isNotEmpty() -> "$cityName, $country"
+                        province.isNotEmpty() && province != cityName -> "$cityName ($province)"
+                        else -> cityName
                     }
+
+                    // 同时把天气数据也直接更新，避免额外一次请求
+                    val weather = jsonObj.optJSONObject("weather")
+                    withContext(Dispatchers.Main) {
+                        viewModel.selectCityAndSimulateWeather(
+                            city    = displayCityName,
+                            lat     = latitude,
+                            lng     = longitude,
+                            country = country,
+                            admin   = province
+                        )
+                        viewModel.showCitySelectorDialog = false
+                    }
+                    return@launch
                 }
             }
-            // If API didn't return search results cleanly, fall back with lat/lng label
+
+            // fallback
             withContext(Dispatchers.Main) {
                 viewModel.selectCityAndSimulateWeather(
-                    city = "%.4f,%.4f".format(java.util.Locale.US, latitude, longitude),
-                    lat = latitude,
-                    lng = longitude,
+                    city    = "%.4f,%.4f".format(latitude, longitude),
+                    lat     = latitude,
+                    lng     = longitude,
                     country = "",
-                    admin = ""
+                    admin   = ""
                 )
                 viewModel.showCitySelectorDialog = false
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
                 viewModel.selectCityAndSimulateWeather(
-                    city = "%.4f,%.4f".format(java.util.Locale.US, latitude, longitude), 
-                    lat = latitude, 
-                    lng = longitude,
+                    city    = "%.4f,%.4f".format(latitude, longitude),
+                    lat     = latitude,
+                    lng     = longitude,
                     country = "",
-                    admin = ""
+                    admin   = ""
                 )
                 viewModel.showCitySelectorDialog = false
-                Toast.makeText(context, "网络解析失败，已采用本地GPS定位", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "定位解析失败，已采用坐标定位", Toast.LENGTH_SHORT).show()
             }
         }
     }
