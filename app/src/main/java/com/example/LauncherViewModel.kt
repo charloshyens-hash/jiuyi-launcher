@@ -410,17 +410,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val musicWidgetMode = MutableStateFlow(prefs.musicWidgetMode)
     val preferredMusicPackage = MutableStateFlow(prefs.preferredMusicPackage)
 
-    val rawPlayList = listOf(
-        Pair("月半小夜曲 - 李克勤", "https://music.163.com/song/media/outer/url?id=115569.mp3"),
-        Pair("红日 - 李克勤", "https://music.163.com/song/media/outer/url?id=115165.mp3"),
-        Pair("千千阙歌 - 陈慧娴", "https://music.163.com/song/media/outer/url?id=115162.mp3"),
-        Pair("漫步人生路 - 邓丽君", "https://music.163.com/song/media/outer/url?id=1398240465.mp3")
-    )
-    var currentTrackName by mutableStateOf(if (prefs.musicWidgetMode == 0) "系统播放器" else "月半小夜曲")
-    var currentTrackArtist by mutableStateOf(if (prefs.musicWidgetMode == 0) "轻触控制活跃音频" else "李克勤")
+    var currentTrackName by mutableStateOf("久以金曲")
+    var currentTrackArtist by mutableStateOf("打开任意音乐播放器即可显示")
     var isMusicPlaying by mutableStateOf(false)
-    var currentTrackIndex by mutableStateOf(0)
-    private var mediaPlayer: android.media.MediaPlayer? = null
+    // ── 新增：封面 Base64 与进度 ──────────────────────
+    var currentArtBase64 by mutableStateOf("")
+    var currentPosition by mutableStateOf(0L)
+    var currentDuration by mutableStateOf(0L)
 
     fun updateRealtimeStats() {
         val context = getApplication<Application>()
@@ -500,51 +496,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         return size
     }
 
-    fun initMediaPlayer() {
-        if (mediaPlayer == null) {
-            mediaPlayer = android.media.MediaPlayer().apply {
-                setOnCompletionListener {
-                    nextTrack()
-                }
-            }
-        }
-    }
-
-    fun playTrack(index: Int) {
-        initMediaPlayer()
-        currentTrackIndex = index
-        val item = rawPlayList[index]
-        currentTrackName = item.first.split(" - ")[0]
-        currentTrackArtist = item.first.split(" - ")[1]
-        try {
-            mediaPlayer?.reset()
-            mediaPlayer?.setDataSource(item.second)
-            mediaPlayer?.prepareAsync()
-            mediaPlayer?.setOnPreparedListener {
-                it.start()
-                isMusicPlaying = true
-            }
-        } catch (e: Exception) {
-            isMusicPlaying = true
-        }
-    }
-
     fun updateMusicWidgetMode(mode: Int) {
         prefs.musicWidgetMode = mode
         musicWidgetMode.value = mode
-        if (mode == 0) {
-            currentTrackName = "系统播放器"
-            currentTrackArtist = "轻触控制活跃音频"
-            isMusicPlaying = false
-            try {
-                mediaPlayer?.pause()
-            } catch (e: Exception) {}
-        } else {
-            val item = rawPlayList[currentTrackIndex]
-            currentTrackName = item.first.split(" - ")[0]
-            currentTrackArtist = item.first.split(" - ")[1]
-            isMusicPlaying = mediaPlayer?.isPlaying == true
-        }
     }
 
     fun updatePreferredMusicPackage(pkg: String) {
@@ -586,76 +540,36 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleMusicPlayback() {
-        if (musicWidgetMode.value == 0) {
-            val context = getApplication<Application>()
-            if (JiuYiMediaService.isServiceRunning) {
-                val activePkg = JiuYiMediaService.getActiveSessionPkg()
-                if (activePkg.isNotEmpty()) {
-                    JiuYiMediaService.sendMediaAction("play_pause")
-                } else {
-                    dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
-                }
-            } else {
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
-            }
-        } else {
-            initMediaPlayer()
-            try {
-                if (isMusicPlaying) {
-                    mediaPlayer?.pause()
-                    isMusicPlaying = false
-                } else {
-                    if (mediaPlayer?.isPlaying == false) {
-                        try {
-                            mediaPlayer?.start()
-                            isMusicPlaying = true
-                        } catch (e: Exception) {
-                            playTrack(currentTrackIndex)
-                        }
-                    } else {
-                        playTrack(currentTrackIndex)
-                    }
-                }
-            } catch (e: Exception) {
-                isMusicPlaying = !isMusicPlaying
+        if (JiuYiMediaService.isServiceRunning) {
+            val activePkg = JiuYiMediaService.getActiveSessionPkg()
+            if (activePkg.isNotEmpty()) {
+                JiuYiMediaService.sendMediaAction("play_pause")
+                return
             }
         }
+        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
     }
 
     fun nextTrack() {
-        if (musicWidgetMode.value == 0) {
-            if (JiuYiMediaService.isServiceRunning) {
-                val activePkg = JiuYiMediaService.getActiveSessionPkg()
-                if (activePkg.isNotEmpty()) {
-                    JiuYiMediaService.sendMediaAction("next")
-                } else {
-                    dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
-                }
-            } else {
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+        if (JiuYiMediaService.isServiceRunning) {
+            val activePkg = JiuYiMediaService.getActiveSessionPkg()
+            if (activePkg.isNotEmpty()) {
+                JiuYiMediaService.sendMediaAction("next")
+                return
             }
-        } else {
-            val next = (currentTrackIndex + 1) % rawPlayList.size
-            playTrack(next)
         }
+        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
     }
 
     fun prevTrack() {
-        if (musicWidgetMode.value == 0) {
-            if (JiuYiMediaService.isServiceRunning) {
-                val activePkg = JiuYiMediaService.getActiveSessionPkg()
-                if (activePkg.isNotEmpty()) {
-                    JiuYiMediaService.sendMediaAction("prev")
-                } else {
-                    dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-                }
-            } else {
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        if (JiuYiMediaService.isServiceRunning) {
+            val activePkg = JiuYiMediaService.getActiveSessionPkg()
+            if (activePkg.isNotEmpty()) {
+                JiuYiMediaService.sendMediaAction("prev")
+                return
             }
-        } else {
-            val prev = if (currentTrackIndex - 1 < 0) rawPlayList.size - 1 else currentTrackIndex - 1
-            playTrack(prev)
         }
+        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }
 
     // Active dock packages List state
@@ -699,19 +613,25 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // Media updates receiver
     private val mediaUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent != null && intent.action == "com.example.LAUNCHER_MEDIA_UPDATE" && musicWidgetMode.value == 0) {
-                val title = intent.getStringExtra("title") ?: ""
-                val artist = intent.getStringExtra("artist") ?: ""
-                val isPlaying = intent.getBooleanExtra("is_playing", false)
-                if (title.isNotEmpty()) {
-                    currentTrackName = title
-                    currentTrackArtist = artist.ifEmpty { "正在播放" }
-                } else {
-                    currentTrackName = "系统播放器"
-                    currentTrackArtist = "轻触控制活跃音频"
-                }
-                isMusicPlaying = isPlaying
+            if (intent?.action != "com.example.LAUNCHER_MEDIA_UPDATE") return
+            val title     = intent.getStringExtra("title") ?: ""
+            val artist    = intent.getStringExtra("artist") ?: ""
+            val isPlaying = intent.getBooleanExtra("is_playing", false)
+            val position  = intent.getLongExtra("position", 0L)
+            val duration  = intent.getLongExtra("duration", 0L)
+            val artBase64 = intent.getStringExtra("art_base64") ?: ""
+
+            if (title.isNotEmpty()) {
+                currentTrackName   = title
+                currentTrackArtist = artist.ifEmpty { "正在播放" }
+            } else {
+                currentTrackName   = "久以金曲"
+                currentTrackArtist = "打开任意音乐播放器即可显示"
             }
+            isMusicPlaying    = isPlaying
+            currentPosition   = position
+            currentDuration   = duration
+            if (artBase64.isNotEmpty()) currentArtBase64 = artBase64
         }
     }
 
@@ -856,10 +776,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } catch (_: Exception) {}
         try {
             getApplication<Application>().unregisterReceiver(weatherUpdateReceiver)
-        } catch (_: Exception) {}
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = null
         } catch (_: Exception) {}
     }
 

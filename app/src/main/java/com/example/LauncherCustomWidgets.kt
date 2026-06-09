@@ -84,7 +84,10 @@ fun LauncherCustomWidgets(
             // Widget Content layouts
             when (widgetType) {
                 "RAM Booster" -> RamBoosterContent(themeColor, viewModel)
-                "Music Cassette" -> MusicCassetteContent(themeColor, viewModel)
+                "Music Cassette" -> MusicCassetteWidget(
+                    themeColor = themeColor,
+                    viewModel = viewModel
+                )
                 "Quick Tasks" -> QuickTasksContent(themeColor)
                 else -> BatteryDashboardContent(themeColor, viewModel)
             }
@@ -196,115 +199,7 @@ fun RamBoosterContent(themeColor: Color, viewModel: LauncherViewModel) {
     }
 }
 
-@Composable
-fun MusicCassetteContent(themeColor: Color, viewModel: LauncherViewModel) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val isPlaying = viewModel.isMusicPlaying
-    val trackName = viewModel.currentTrackName
-    val trackArtist = viewModel.currentTrackArtist
-    
-    // Rotating Cassette animation degree
-    val infiniteTransition = rememberInfiniteTransition(label = "rotList")
-    val rotAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "angleRot"
-    )
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Rotating album disk (Clicking launches preferred music app)
-        Box(
-            modifier = Modifier
-                .size(65.dp)
-                .rotate(if (isPlaying) rotAngle else 0f)
-                .background(Color.Black, shape = CircleShape)
-                .clickable { viewModel.launchPreferredMusicApp(context) }
-                .padding(4.dp)
-                .background(themeColor, shape = CircleShape)
-                .padding(14.dp)
-                .background(Color.Black, shape = CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(modifier = Modifier.size(10.dp).background(Color.White, shape = CircleShape))
-        }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
-        // Tracks info (Clicking launches preferred music app)
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable { viewModel.launchPreferredMusicApp(context) }
-        ) {
-            Text(
-                text = trackName,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = trackArtist,
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        // Controls buttons row (Completely detached from the clickable column!)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            IconButton(
-                onClick = { viewModel.prevTrack() },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SkipPrevious,
-                    contentDescription = "Prev",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            IconButton(
-                onClick = { viewModel.toggleMusicPlayback() },
-                modifier = Modifier.size(34.dp).background(themeColor, shape = CircleShape)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "PlayPause",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            IconButton(
-                onClick = { viewModel.nextTrack() },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SkipNext,
-                    contentDescription = "Next",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun QuickTasksContent(themeColor: Color) {
