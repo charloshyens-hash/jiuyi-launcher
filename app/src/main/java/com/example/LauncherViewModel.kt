@@ -100,8 +100,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 val cleaned = coord.replace("°N", "").replace("°S", "").replace("°E", "").replace("°W", "")
                 val parts = cleaned.split(Regex("[,\\s]+")).map { it.trim() }.mapNotNull { it.toDoubleOrNull() }
                 if (parts.size >= 2) {
-                    val lat = parts[0]
-                    val lon = parts[1]
+                    val lat = parts[0]; val lon = parts[1]
                     val cleanCity = weatherRepo.reverseGeocode(lat, lon)
                     if (cleanCity != null) {
                         _weatherState.value = _weatherState.value.copy(
@@ -340,25 +339,37 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 通过定向 ACTION_MEDIA_BUTTON 广播在后台唤醒指定播放器进程（不打开 Activity）。
-     * 主流播放器（网易云、QQ音乐、酷狗、酷我等）均有注册接收媒体按钮的后台 Receiver/Service。
+     * 后台唤醒播放器（Android 8+ 兼容方案）
+     *
+     * ACTION_MEDIA_BUTTON 定向广播在 Android 8+ 对未运行进程无效。
+     * 改用 AudioFocus 请求 + 系统 dispatchMediaKeyEvent，
+     * 让系统把媒体键路由给已注册 MediaButtonReceiver 的播放器后台服务。
+     * 主流播放器（网易云/QQ音乐/酷狗/酷我）均注册了此接收器，无需启动 Activity。
      */
     private fun tryWakeMusicServiceBackground(pkg: String): Boolean {
         return try {
             val context = getApplication<Application>()
-            val now = android.os.SystemClock.uptimeMillis()
-            val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
-            val keyUp   = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP,   android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
-            val intentDown = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                setPackage(pkg)
-                putExtra(android.view.KeyEvent.EXTRA_KEY_EVENT, keyDown)
-            }
-            val intentUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                setPackage(pkg)
-                putExtra(android.view.KeyEvent.EXTRA_KEY_EVENT, keyUp)
-            }
-            context.sendBroadcast(intentDown)
-            context.sendBroadcast(intentUp)
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                ?: return false
+
+            // 请求音频焦点：驱使系统通知已注册媒体按钮的播放器服务准备就绪
+            val focusRequest = android.media.AudioFocusRequest.Builder(
+                android.media.AudioManager.AUDIOFOCUS_GAIN
+            ).apply {
+                setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                setWillPauseWhenDucked(false)
+                setAcceptsDelayedFocusGain(true)
+                setOnAudioFocusChangeListener({})
+            }.build()
+            audioManager.requestAudioFocus(focusRequest)
+
+            // 发系统广播媒体键（不定向，系统负责路由给活跃播放器）
+            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
             true
         } catch (e: Exception) {
             android.util.Log.e("LauncherVM", "tryWakeMusicServiceBackground failed: ${e.message}")
@@ -367,72 +378,49 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 播放/暂停逻辑：
+     * 播放/暂停
      *
-     * 情况A：有活跃 MediaSession（播放器在后台运行中）
-     *   → 直接通过 TransportControls 控制 play_pause，用户留在桌面
+     * 情况A：有活跃 MediaSession → TransportControls 直接控制，用户留桌面
+     * 情况B：无活跃 MediaSession →
+     *   步骤1: 请求 AudioFocus + 发系统媒体键（让系统路由给后台播放器服务）
+     *   步骤2: 600ms 后若 MediaSession 已注册，用 TransportControls 精准控制
+     *   步骤3: 再等 600ms 仍无响应，补发一次系统媒体键兜底
      *
-     * 情况B：无活跃 MediaSession（播放器进程未运行或已被杀死）
-     *   → 步骤1：先发系统 KEYCODE_MEDIA_PLAY（若播放器进程驻留后台可直接响应）
-     *   → 步骤2：500ms 后仍无响应，向首选播放器发定向 ACTION_MEDIA_BUTTON 广播
-     *            （后台唤醒进程，不打开 Activity，用户留在桌面）
-     *   → 步骤3：再等 800ms，补发 KEYCODE_MEDIA_PLAY，播放器收到后开始播放推荐曲目
-     *   → 步骤4（极端兜底）：上述均失效时才启动 Activity（极少数不支持后台唤醒的播放器）
+     * ⚠️ 已彻底移除 startActivity 兜底：
+     *    任何情况都不主动拉起播放器界面，用户始终留在桌面。
      */
     fun toggleMusicPlayback() {
         // ── 情况A：有活跃会话，直接控制 ────────────────────────────────────
-        if (JiuYiMediaService.isServiceRunning) {
-            val activePkg = JiuYiMediaService.getActiveSessionPkg()
-            if (activePkg.isNotEmpty()) {
-                JiuYiMediaService.sendMediaAction("play_pause")
-                return
-            }
+        if (JiuYiMediaService.isServiceRunning &&
+            JiuYiMediaService.getActiveSessionPkg().isNotEmpty()
+        ) {
+            JiuYiMediaService.sendMediaAction("play_pause")
+            return
         }
 
-        // ── 情况B：无活跃会话，后台唤醒播放器 ──────────────────────────────
+        // ── 情况B：无活跃会话，后台唤醒 ────────────────────────────────────
         val pkg = preferredMusicPackage.value
 
-        // 步骤1：先尝试系统媒体键（播放器进程驻留时可直接响应）
-        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+        // 步骤1：请求音频焦点 + 系统媒体键（主流播放器后台服务会响应）
+        tryWakeMusicServiceBackground(pkg)
 
         viewModelScope.launch {
-            // 步骤2：500ms 后检查是否已有响应
-            delay(500)
-            if (JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) return@launch
-
-            // 无响应 → 定向广播后台唤醒播放器进程（不打开 Activity）
-            val woke = if (pkg.isNotEmpty()) tryWakeMusicServiceBackground(pkg) else false
-
-            // 步骤3：等播放器进程起来后补发 PLAY 让其播放推荐曲目
-            delay(800)
+            // 步骤2：等待播放器注册 MediaSession（通常 400~800ms）
+            delay(600)
             if (JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
-                // MediaSession 已注册，用 TransportControls 更精准
                 JiuYiMediaService.sendMediaAction("play_pause")
-            } else {
-                // 再发一次系统媒体键兜底
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+                return@launch
             }
 
-            // 步骤4（极端兜底）：广播唤醒失败 且 仍无活跃会话
-            // 才启动 Activity（极少数不支持后台唤醒的播放器）
-            if (!woke && JiuYiMediaService.getActiveSessionPkg().isEmpty()) {
-                delay(300)
-                if (JiuYiMediaService.getActiveSessionPkg().isEmpty() && pkg.isNotEmpty()) {
-                    try {
-                        val context = getApplication<Application>()
-                        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
-                        if (intent != null) {
-                            // FLAG_ACTIVITY_NO_USER_ACTION：减少前台感知，后台启动
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
-                            context.startActivity(intent)
-                            delay(700)
-                            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("LauncherVM", "fallback launch failed: ${e.message}")
-                    }
-                }
+            // 步骤3：仍无 MediaSession，补发系统媒体键再试一次
+            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+
+            // 最后确认：再等 500ms 看是否成功
+            delay(500)
+            if (JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+                JiuYiMediaService.sendMediaAction("play_pause")
             }
+            // 无论成功与否，到此结束，绝不启动 Activity
         }
     }
 
