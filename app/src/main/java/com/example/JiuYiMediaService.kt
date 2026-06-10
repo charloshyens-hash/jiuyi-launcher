@@ -9,9 +9,11 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.util.Base64
 import android.util.Log
+import android.view.KeyEvent
 import com.example.weather.WeatherNotificationParser
 import java.io.ByteArrayOutputStream
 
@@ -187,18 +189,57 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
+    // ── 媒体键分发（通用，适配所有播放器） ────────────────────────────────────
+    private fun dispatchKey(keyCode: Int) {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+            val now = SystemClock.uptimeMillis()
+            audioManager?.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+            audioManager?.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+        } catch (e: Exception) {
+            Log.e("JiuYiMedia", "dispatchKey($keyCode) failed: ${e.message}")
+        }
+    }
+
+    /**
+     * 执行媒体控制指令
+     *
+     * 双轨策略，兼容所有播放器：
+     *   轨道1 — TransportControls（MediaSession API）：精准控制已注册 Session 的播放器
+     *   轨道2 — AudioManager.dispatchMediaKeyEvent（系统媒体键）：兜底路由
+     *
+     * 为何需要双轨：
+     *   网易云、QQ音乐等在暂停/停止状态下，transportControls.play() 可能被忽略，
+     *   但系统媒体键走 AudioManager 路由，绕过 Session API，几乎对所有播放器有效。
+     *   两者同时发出，哪条先到哪条生效，不会重复触发（播放器内部有防抖）。
+     */
     fun performMediaAction(action: String) {
         if (activeController == null) updateActiveController()
-        val controller = activeController ?: return
+        val controller = activeController
+
         try {
             when (action) {
                 "play_pause" -> {
-                    val state = controller.playbackState?.state
-                    if (state == PlaybackState.STATE_PLAYING) controller.transportControls.pause()
-                    else controller.transportControls.play()
+                    val state = controller?.playbackState?.state
+                    if (state == PlaybackState.STATE_PLAYING) {
+                        // 正在播放 → 暂停：两轨同时发
+                        controller?.transportControls?.pause()
+                        dispatchKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+                    } else {
+                        // 暂停 / 停止 / 未知 → 播放
+                        // 先发系统键（更快绕过 Session 限制），再发 TransportControls
+                        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+                        controller?.transportControls?.play()
+                    }
                 }
-                "next" -> controller.transportControls.skipToNext()
-                "prev" -> controller.transportControls.skipToPrevious()
+                "next" -> {
+                    controller?.transportControls?.skipToNext()
+                    dispatchKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+                }
+                "prev" -> {
+                    controller?.transportControls?.skipToPrevious()
+                    dispatchKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                }
             }
         } catch (e: Exception) {
             Log.e("JiuYiMedia", "Error performing action $action: ${e.message}")

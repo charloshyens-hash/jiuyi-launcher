@@ -380,62 +380,32 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     /**
      * 播放/暂停
      *
-     * 情况A：有活跃 MediaSession → TransportControls 直接控制，用户留桌面
-     * 情况B：无活跃 MediaSession →
-     *   步骤1: 请求 AudioFocus + 发系统媒体键（让系统路由给后台播放器服务）
-     *   步骤2: 600ms 后若 MediaSession 已注册，用 TransportControls 精准控制
-     *   步骤3: 再等 600ms 仍无响应，补发一次系统媒体键兜底
-     *
-     * ⚠️ 已彻底移除 startActivity 兜底：
-     *    任何情况都不主动拉起播放器界面，用户始终留在桌面。
+     * 逻辑大幅简化：
+     * Service 运行中 → 直接调 sendMediaAction，由 Service 内部双轨策略处理
+     * Service 未运行 → 补发系统媒体键兜底
+     * 任何情况都不启动 Activity，用户始终留在桌面
      */
     fun toggleMusicPlayback() {
-        // ── 情况A：有活跃会话，直接控制 ────────────────────────────────────
-        if (JiuYiMediaService.isServiceRunning &&
-            JiuYiMediaService.getActiveSessionPkg().isNotEmpty()
-        ) {
+        if (JiuYiMediaService.isServiceRunning) {
             JiuYiMediaService.sendMediaAction("play_pause")
             return
         }
-
-        // ── 情况B：无活跃会话，后台唤醒 ────────────────────────────────────
-        val pkg = preferredMusicPackage.value
-
-        // 步骤1：请求音频焦点 + 系统媒体键（主流播放器后台服务会响应）
-        tryWakeMusicServiceBackground(pkg)
-
-        viewModelScope.launch {
-            // 步骤2：等待播放器注册 MediaSession（通常 400~800ms）
-            delay(600)
-            if (JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
-                JiuYiMediaService.sendMediaAction("play_pause")
-                return@launch
-            }
-
-            // 步骤3：仍无 MediaSession，补发系统媒体键再试一次
-            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
-
-            // 最后确认：再等 500ms 看是否成功
-            delay(500)
-            if (JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
-                JiuYiMediaService.sendMediaAction("play_pause")
-            }
-            // 无论成功与否，到此结束，绝不启动 Activity
-        }
+        // Service 未运行时的最后兜底
+        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
     }
 
     fun nextTrack() {
         if (JiuYiMediaService.isServiceRunning) {
-            val activePkg = JiuYiMediaService.getActiveSessionPkg()
-            if (activePkg.isNotEmpty()) { JiuYiMediaService.sendMediaAction("next"); return }
+            JiuYiMediaService.sendMediaAction("next")
+            return
         }
         dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
     }
 
     fun prevTrack() {
         if (JiuYiMediaService.isServiceRunning) {
-            val activePkg = JiuYiMediaService.getActiveSessionPkg()
-            if (activePkg.isNotEmpty()) { JiuYiMediaService.sendMediaAction("prev"); return }
+            JiuYiMediaService.sendMediaAction("prev")
+            return
         }
         dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
     }
