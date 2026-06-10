@@ -430,6 +430,13 @@ fun BoldMinimalistClock(
             textAlign = TextAlign.Center,
             fontStyle = FontStyle.Italic,
             fontFamily = FontFamily.SansSerif,
+            style = androidx.compose.ui.text.TextStyle(
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = Color.Black.copy(alpha = 0.4f),
+                    offset = androidx.compose.ui.geometry.Offset(2f, 2f),
+                    blurRadius = 6f
+                )
+            ),
             modifier = Modifier
                 .clickable { launchAlarmClock(context) }
                 .padding(bottom = 4.dp)

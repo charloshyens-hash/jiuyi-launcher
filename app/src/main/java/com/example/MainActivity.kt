@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.WarmSunOrange
 import com.example.ui.theme.PurpleBlue
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.EmeraldTeal
@@ -83,8 +84,8 @@ class MainActivity : ComponentActivity() {
                 val themeColorIndex by viewModel.currentThemeIndex.collectAsState()
                 
                 // Get the synchronized active color
-                val themeColors = listOf(PurpleBlue, NeonCyan, EmeraldTeal, VelvetPink, AmberYellow)
-                val activeThemeColor = themeColors.getOrElse(themeColorIndex) { PurpleBlue }
+                val themeColors = listOf(WarmSunOrange, PurpleBlue, NeonCyan, EmeraldTeal, VelvetPink, AmberYellow)
+                val activeThemeColor = themeColors.getOrElse(themeColorIndex) { WarmSunOrange }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -217,12 +218,17 @@ fun LauncherHomeScreen(
                 }
                 
                 val itemsCount = currentDockList.size
-                val centerX = screenWidth / 2f
-                val itemWidthDp = 68f
-                val totalWidth = itemsCount * itemWidthDp
-                val startX = centerX - totalWidth / 2f
-                
-                val targetIndex = ((dropX - startX) / itemWidthDp).toInt().coerceIn(0, itemsCount)
+                val dockMaxWidth = 500f
+                val dockActualWidthDp = screenWidth.coerceAtMost(dockMaxWidth.toInt()) - 24f
+                val dockStartX = (screenWidth - dockActualWidthDp) / 2f
+                val activeStartX = dockStartX + 8f
+                val activeWidth = dockActualWidthDp - 16f
+                val cellWidthDp = if (itemsCount > 0) activeWidth / itemsCount else 68f
+                val targetIndex = if (itemsCount > 0) {
+                    ((dropX - activeStartX) / cellWidthDp).toInt().coerceIn(0, itemsCount)
+                } else {
+                    0
+                }
                 
                 if (app.packageName == "MENU_BUTTON") {
                     currentDockList.add(targetIndex, "MENU_BUTTON")
@@ -355,7 +361,8 @@ fun LauncherHomeScreen(
         ) {
             Card(
                 modifier = Modifier
-                    .wrapContentWidth() // centers overall and adjusts with number of items
+                    .fillMaxWidth(0.92f)
+                    .widthIn(max = 500.dp)
                     .height(82.dp)
                     .shadow(12.dp, RoundedCornerShape(24.dp)),
                 shape = RoundedCornerShape(24.dp),
@@ -366,9 +373,9 @@ fun LauncherHomeScreen(
             ) {
                 Row(
                     modifier = Modifier
-                        .wrapContentWidth()
-                        .padding(horizontal = 20.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     dockPackages.forEachIndexed { index, pkg ->
@@ -380,6 +387,8 @@ fun LauncherHomeScreen(
 
                         Box(
                             modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
                                 .onGloballyPositioned { bounds ->
                                     val coords = bounds.positionInWindow()
                                     itemScreenX = coords.x / density
@@ -398,8 +407,8 @@ fun LauncherHomeScreen(
                                             viewModel.isDraggingFromDock = true
                                             viewModel.dragSourceIndex = index
                                             viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                x = itemScreenX + 27f,
-                                                y = itemScreenY + 27f
+                                                x = itemScreenX + 25f,
+                                                y = itemScreenY + 25f
                                             )
                                         },
                                         onDragEnd = {
@@ -417,12 +426,13 @@ fun LauncherHomeScreen(
                                             )
                                         }
                                     )
-                                }
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
                             if (isTrigger) {
                                 Box(
                                     modifier = Modifier
-                                        .size(54.dp)
+                                        .size(50.dp)
                                         .shadow(4.dp, CircleShape)
                                         .clip(CircleShape)
                                         .background(
@@ -444,33 +454,19 @@ fun LauncherHomeScreen(
                                 val linkedApp = appList.firstOrNull { it.packageName == pkg }
                                 Box(
                                     modifier = Modifier
-                                        .size(54.dp)
+                                        .size(50.dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             linkedApp?.launch(context) ?: showToast("未绑定或包已被卸载")
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        IconStylingCard(
-                                            app = linkedApp ?: AppModel("未安装", pkg, ""),
-                                            filter = iconPackFilter,
-                                            themeColor = themeColor,
-                                            modifier = Modifier.size(38.dp)
-                                        )
-                                        if (showLabels) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = linkedApp?.label?.take(3) ?: pkg.takeLast(3),
-                                                fontSize = 9.sp,
-                                                color = Color.White.copy(alpha = 0.8f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.width(44.dp)
-                                            )
-                                        }
-                                    }
+                                    IconStylingCard(
+                                        app = linkedApp ?: AppModel("未安装", pkg, ""),
+                                        filter = iconPackFilter,
+                                        themeColor = themeColor,
+                                        modifier = Modifier.size(36.dp)
+                                    )
                                 }
                             }
                         }
@@ -548,7 +544,7 @@ fun LauncherHomeScreen(
                             },
                             GestureMenuOption("个性主题", Icons.Default.ColorLens) {
                                 isGesturePanelOpen = false
-                                val nextIndex = (themeColorIndex + 1) % 5
+                                val nextIndex = (themeColorIndex + 1) % 6
                                 viewModel.updateTheme(nextIndex)
                                 showToast("已切换桌面原色主题")
                             },

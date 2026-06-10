@@ -100,11 +100,12 @@ fun LauncherSettingsPanel(
                     )
                     
                     val colors = listOf(
-                        Triple("太空靛蓝", Color(0xFF6366F1), 0),
-                        Triple("极光霓虹", Color(0xFF06B6D4), 1),
-                        Triple("森林祖母", Color(0xFF10B981), 2),
-                        Triple("微甜嫣粉", Color(0xFFEC4899), 3),
-                        Triple("秋叶琥珀", Color(0xFFF59E0B), 4)
+                        Triple("暖阳橙杏 (新默认主题)", Color(0xFFFA5F3D), 0),
+                        Triple("太空靛蓝", Color(0xFF6366F1), 1),
+                        Triple("极光霓虹", Color(0xFF06B6D4), 2),
+                        Triple("森林祖母", Color(0xFF10B981), 3),
+                        Triple("微甜嫣粉", Color(0xFFEC4899), 4),
+                        Triple("秋叶琥珀", Color(0xFFF59E0B), 5)
                     )
                     colors.forEach { (name, color, index) ->
                         val isSelected = currentThemeIndex == index
@@ -161,7 +162,7 @@ fun LauncherSettingsPanel(
             // Section 3: Wallpaper
             item {
                 SettingsCategoryCard(title = "动态壁纸引擎", icon = Icons.Outlined.Landscape, themeColor = themeColor) {
-                    val wallPapers = listOf("Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate")
+                    val wallPapers = listOf("Warm Sunlight", "Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate")
                     wallPapers.forEach { wp ->
                         val isSelected = wallpaperName == wp
                         Row(
@@ -173,6 +174,7 @@ fun LauncherSettingsPanel(
                         ) {
                             Text(
                                 text = when (wp) {
+                                    "Warm Sunlight" -> "温暖柔和初照阳晨 (明亮暖色默认)"
                                     "Cosmic Wave" -> "慢速粒子宇宙流体波线"
                                     "Interactive Matrix" -> "黑客帝国祖母绿字符数字雨"
                                     "Starfield Warp" -> "3D太空火箭光速飞行光弧"

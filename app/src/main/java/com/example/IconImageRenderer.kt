@@ -55,6 +55,7 @@ fun IconImageRenderer(
 
         drawImage(
             image = imageBitmap,
+            dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
             colorFilter = filterColor
         )
     }

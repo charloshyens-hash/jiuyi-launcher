@@ -206,6 +206,21 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
+    private fun dispatchKeyToController(controller: MediaController?, keyCode: Int) {
+        if (controller != null) {
+            try {
+                val now = SystemClock.uptimeMillis()
+                val keyDown = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0)
+                val keyUp = KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0)
+                controller.dispatchMediaButtonEvent(keyDown)
+                controller.dispatchMediaButtonEvent(keyUp)
+            } catch (e: Exception) {
+                Log.e("JiuYiMedia", "dispatchKeyToController failed: ${e.message}")
+            }
+        }
+        dispatchKey(keyCode)
+    }
+
     fun performMediaAction(action: String) {
         if (activeController == null) updateActiveController()
         val controller = activeController
@@ -215,19 +230,20 @@ class JiuYiMediaService : NotificationListenerService() {
                     val state = controller?.playbackState?.state
                     if (state == PlaybackState.STATE_PLAYING) {
                         controller?.transportControls?.pause()
-                        dispatchKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+                        dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PAUSE)
                     } else {
-                        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+                        // Use KEYCODE_MEDIA_PLAY to make the action idempotent and prevent cancellation
+                        dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PLAY)
                         controller?.transportControls?.play()
                     }
                 }
                 "next" -> {
                     controller?.transportControls?.skipToNext()
-                    dispatchKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+                    dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_NEXT)
                 }
                 "prev" -> {
                     controller?.transportControls?.skipToPrevious()
-                    dispatchKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                    dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
                 }
             }
         } catch (e: Exception) {

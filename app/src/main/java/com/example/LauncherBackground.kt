@@ -22,11 +22,63 @@ fun LauncherBackground(
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         when (wallpaperName) {
+            "Warm Sunlight" -> WarmSunlightWallpaper()
             "Cosmic Wave" -> CosmicWaveWallpaper()
             "Interactive Matrix" -> DigitalMatrixRainWallpaper()
             "Starfield Warp" -> StarfieldWarpWallpaper()
             else -> MinimalSlateWallpaper()
         }
+    }
+}
+
+@Composable
+fun WarmSunlightWallpaper() {
+    val infiniteTransition = rememberInfiniteTransition(label = "warmSunlight")
+    
+    // Smooth breathing of warm light centers
+    val glow1 by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(6000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow1"
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize().background(Color(0xFFFEF9C3))) { // bright light warm yellow base
+        // Large warm sun-glow / orange-yellow gradient in top-right
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFFFFEDD5), Color(0xFFFEF9C3), Color.Transparent),
+                center = Offset(size.width * 0.8f, size.height * 0.15f),
+                radius = size.width * glow1
+            ),
+            radius = size.width * glow1,
+            center = Offset(size.width * 0.8f, size.height * 0.15f)
+        )
+
+        // Soft peach warm glow in bottom-left
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFFFFDFD5), Color.Transparent),
+                center = Offset(size.width * 0.1f, size.height * 0.85f),
+                radius = size.width * 1.2f
+            ),
+            radius = size.width * 1.2f,
+            center = Offset(size.width * 0.1f, size.height * 0.85f)
+        )
+        
+        // Gentle sunny abstract wave / subtle circles for decorative depth
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x60FFE4E6), Color.Transparent),
+                center = Offset(size.width * 0.5f, size.height * 0.5f),
+                radius = size.width * 0.6f
+            ),
+            radius = size.width * 0.6f,
+            center = Offset(size.width * 0.5f, size.height * 0.5f)
+        )
     }
 }
 

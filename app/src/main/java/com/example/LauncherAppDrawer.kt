@@ -841,6 +841,7 @@ fun MyPhoneDrawerDashboard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val themesColors = listOf(
+                Pair("暖杏", Color(0xFFFA5F3D)),
                 Pair("靛青", Color(0xFF6366F1)),
                 Pair("霓虹", Color(0xFF06B6D4)),
                 Pair("祖母", Color(0xFF10B981)),

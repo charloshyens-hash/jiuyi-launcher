@@ -338,64 +338,211 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * 后台唤醒播放器（Android 8+ 兼容方案）
-     *
-     * ACTION_MEDIA_BUTTON 定向广播在 Android 8+ 对未运行进程无效。
-     * 改用 AudioFocus 请求 + 系统 dispatchMediaKeyEvent，
-     * 让系统把媒体键路由给已注册 MediaButtonReceiver 的播放器后台服务。
-     * 主流播放器（网易云/QQ音乐/酷狗/酷我）均注册了此接收器，无需启动 Activity。
-     */
-    private fun tryWakeMusicServiceBackground(pkg: String): Boolean {
-        return try {
-            val context = getApplication<Application>()
+    fun findAnyInstalledMusicPackage(): String {
+        val context = getApplication<Application>()
+        val pm = context.packageManager
+        
+        try {
+            val musicIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_MUSIC)
+            }
+            val list = pm.queryIntentActivities(musicIntent, 0)
+            if (!list.isNullOrEmpty()) {
+                val pkg = list[0].activityInfo.packageName
+                if (pkg.isNotEmpty()) return pkg
+            }
+        } catch (e: Exception) {}
+
+        try {
+            val packages = pm.getInstalledPackages(0)
+            val commonMusicPkgs = listOf(
+                "com.tencent.qqmusic",
+                "com.netease.cloudmusic",
+                "com.kugou.android",
+                "cn.kuwo.player",
+                "com.android.music",
+                "com.miui.player",
+                "com.heytap.music",
+                "com.android.mediacenter",
+                "com.vivo.music",
+                "com.cootek.smartdialer",
+                "com.apple.android.music",
+                "com.google.android.apps.youtube.music"
+            )
+            for (p in commonMusicPkgs) {
+                try {
+                    pm.getPackageInfo(p, 0)
+                    return p
+                } catch (e: Exception) {}
+            }
+            
+            for (info in packages) {
+                val name = info.packageName.lowercase()
+                if (name.contains("music") || name.contains("player") || name.contains("audio")) {
+                    return info.packageName
+                }
+            }
+        } catch (e: Exception) {}
+        return ""
+    }
+
+    private fun wakeMusicAppBackground(pkg: String) {
+        if (pkg.isEmpty()) return
+        val context = getApplication<Application>()
+        try {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
-                ?: return false
+            if (audioManager != null) {
+                val focusRequest = android.media.AudioFocusRequest.Builder(
+                    android.media.AudioManager.AUDIOFOCUS_GAIN
+                ).apply {
+                    setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    setWillPauseWhenDucked(false)
+                    setAcceptsDelayedFocusGain(true)
+                    setOnAudioFocusChangeListener({})
+                }.build()
+                audioManager.requestAudioFocus(focusRequest)
+            }
+        } catch (e: Exception) {}
 
-            // 请求音频焦点：驱使系统通知已注册媒体按钮的播放器服务准备就绪
-            val focusRequest = android.media.AudioFocusRequest.Builder(
-                android.media.AudioManager.AUDIOFOCUS_GAIN
-            ).apply {
-                setAudioAttributes(
-                    android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
+        try {
+            val pm = context.packageManager
+            val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
+            mediaButtonIntent.setPackage(pkg)
+            val receivers = pm.queryBroadcastReceivers(mediaButtonIntent, 0)
+            
+            val now = android.os.SystemClock.uptimeMillis()
+            val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
+            val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP,   android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
+            
+            if (!receivers.isNullOrEmpty()) {
+                val componentName = android.content.ComponentName(
+                    receivers[0].activityInfo.packageName,
+                    receivers[0].activityInfo.name
                 )
-                setWillPauseWhenDucked(false)
-                setAcceptsDelayedFocusGain(true)
-                setOnAudioFocusChangeListener({})
-            }.build()
-            audioManager.requestAudioFocus(focusRequest)
-
-            // 发系统广播媒体键（不定向，系统负责路由给活跃播放器）
-            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
-            true
+                val intentDown = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    component = componentName
+                    putExtra(Intent.EXTRA_KEY_EVENT, keyDown)
+                }
+                val intentUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    component = componentName
+                    putExtra(Intent.EXTRA_KEY_EVENT, keyUp)
+                }
+                context.sendBroadcast(intentDown)
+                context.sendBroadcast(intentUp)
+            } else {
+                val intentDown = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    setPackage(pkg)
+                    putExtra(Intent.EXTRA_KEY_EVENT, keyDown)
+                }
+                val intentUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    setPackage(pkg)
+                    putExtra(Intent.EXTRA_KEY_EVENT, keyUp)
+                }
+                context.sendBroadcast(intentDown)
+                context.sendBroadcast(intentUp)
+            }
         } catch (e: Exception) {
-            android.util.Log.e("LauncherVM", "tryWakeMusicServiceBackground failed: ${e.message}")
-            false
+            android.util.Log.e("LauncherVM", "wakeMusicAppBackground failed: ${e.message}")
+        }
+    }
+
+    private fun connectAndPlayViaMediaBrowser(pkg: String) {
+        if (pkg.isEmpty()) return
+        val context = getApplication<Application>()
+        val pm = context.packageManager
+        val browserIntent = Intent("android.media.browse.MediaBrowserService")
+        val services = pm.queryIntentServices(browserIntent, 0)
+        val targetService = services.firstOrNull { it.serviceInfo.packageName == pkg }
+        
+        if (targetService != null) {
+            val componentName = android.content.ComponentName(
+                targetService.serviceInfo.packageName,
+                targetService.serviceInfo.name
+            )
+            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            handler.post {
+                try {
+                    var mediaBrowser: android.media.browse.MediaBrowser? = null
+                    val connectionCallback = object : android.media.browse.MediaBrowser.ConnectionCallback() {
+                        override fun onConnected() {
+                            try {
+                                val token = mediaBrowser?.sessionToken
+                                if (token != null) {
+                                    val controller = android.media.session.MediaController(context, token)
+                                    controller.transportControls.play()
+                                    val now = android.os.SystemClock.uptimeMillis()
+                                    controller.dispatchMediaButtonEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0))
+                                    controller.dispatchMediaButtonEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0))
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("LauncherVM", "MediaBrowser session play failed: ${e.message}")
+                            } finally {
+                                try { mediaBrowser?.disconnect() } catch (e: Exception) {}
+                            }
+                        }
+                        override fun onConnectionFailed() {
+                            try { mediaBrowser?.disconnect() } catch (e: Exception) {}
+                        }
+                        override fun onConnectionSuspended() {
+                            try { mediaBrowser?.disconnect() } catch (e: Exception) {}
+                        }
+                    }
+                    mediaBrowser = android.media.browse.MediaBrowser(
+                        context,
+                        componentName,
+                        connectionCallback,
+                        null
+                    )
+                    mediaBrowser.connect()
+                } catch (e: Exception) {
+                    android.util.Log.e("LauncherVM", "MediaBrowser setup failed: ${e.message}")
+                }
+            }
         }
     }
 
     /**
      * 播放/暂停
      *
-     * 逻辑大幅简化：
-     * Service 运行中 → 直接调 sendMediaAction，由 Service 内部双轨策略处理
-     * Service 未运行 → 补发系统媒体键兜底
-     * 任何情况都不启动 Activity，用户始终留在桌面
+     * 逻辑说明：
+     * 1. 已经有活跃播放器 Session（无论在播放、暂停或后台挂起）：
+     *    由于已有有效会话，调用 sendMediaAction 直接控制，通过 TransportControls 精准操控。
+     * 2. 没有活跃 Session：
+     *    即“没有音乐在播放且暂无会话识别”时，先通过 connectAndPlayViaMediaBrowser 定向拉起播放器的 MediaBrowserService，
+     *    同时配合 wakeMusicAppBackground 发送 KEYCODE_MEDIA_PLAY 显式广播将其冷启动/后台唤醒。
+     *    唤醒同时申请 AudioFocus，接着开启 viewModelScope 协程延迟 800ms，等待该播放器实例化 MediaSession。
+     *    随后若已建立会话，直接调用精准控制，否则通用系统媒体键兜底触发播放。
      */
     fun toggleMusicPlayback() {
-        if (JiuYiMediaService.isServiceRunning) {
+        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
             JiuYiMediaService.sendMediaAction("play_pause")
             return
         }
-        // Service 未运行时的最后兜底
-        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+
+        val targetPkg = preferredMusicPackage.value.ifEmpty { findAnyInstalledMusicPackage() }
+        if (targetPkg.isNotEmpty()) {
+            connectAndPlayViaMediaBrowser(targetPkg)
+            wakeMusicAppBackground(targetPkg)
+            viewModelScope.launch {
+                delay(800)
+                if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+                    JiuYiMediaService.sendMediaAction("play_pause")
+                } else {
+                    dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+                }
+            }
+        } else {
+            dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        }
     }
 
     fun nextTrack() {
-        if (JiuYiMediaService.isServiceRunning) {
+        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
             JiuYiMediaService.sendMediaAction("next")
             return
         }
@@ -403,7 +550,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun prevTrack() {
-        if (JiuYiMediaService.isServiceRunning) {
+        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
             JiuYiMediaService.sendMediaAction("prev")
             return
         }

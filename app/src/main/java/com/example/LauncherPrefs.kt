@@ -144,7 +144,7 @@ class LauncherPrefs(context: Context) {
         set(value) = prefs.edit().putString(KEY_CLOCK_STYLE, value).apply()
 
     var wallpaperName: String
-        get() = prefs.getString(KEY_WALLPAPER_NAME, "Cosmic Wave") ?: "Cosmic Wave" // "Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate"
+        get() = prefs.getString(KEY_WALLPAPER_NAME, "Warm Sunlight") ?: "Warm Sunlight" // "Warm Sunlight", "Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate"
         set(value) = prefs.edit().putString(KEY_WALLPAPER_NAME, value).apply()
 
     var showLabels: Boolean

@@ -19,6 +19,7 @@ val GlassWhitePressed = Color(0x40FFFFFF)
 val GlassBorder = Color(0x1AFFFFFF)
 
 // Multi-Theme Colors
+val WarmSunOrange = Color(0xFFFA5F3D)
 val PurpleBlue = Color(0xFF6366F1)
 val NeonCyan = Color(0xFF06B6D4)
 val EmeraldTeal = Color(0xFF10B981)
