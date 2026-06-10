@@ -45,7 +45,7 @@ fun MusicCassetteWidget(
 ) {
     val context = LocalContext.current
 
-    // ── 授权状态：用 mutableStateOf + lifecycle resume 事件主动刷新 ──────────
+    // ── 授权状态 ─────────────────────────────────────────────────────────────
     var hasPermission by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -66,8 +66,9 @@ fun MusicCassetteWidget(
     val position    = viewModel.currentPosition
     val duration    = viewModel.currentDuration
 
-    val hasActiveSession = JiuYiMediaService.isServiceRunning &&
-            JiuYiMediaService.getActiveSessionPkg().isNotEmpty()
+    // ── 关键修复：用 collectAsState() 订阅 Flow，Compose 自动感知变化 ─────────
+    val activeSessionPkg by JiuYiMediaService.activeSessionPkgFlow.collectAsState()
+    val hasActiveSession = JiuYiMediaService.isServiceRunning && activeSessionPkg.isNotEmpty()
 
     val artBitmap = remember(artBase64) {
         if (artBase64.isNotEmpty()) {
@@ -163,7 +164,7 @@ fun MusicCassetteWidget(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 封面（点击唤醒播放器，不切歌）
+            // 封面（点击唤醒播放器）
             Box(
                 modifier = Modifier
                     .size(64.dp)
@@ -192,7 +193,7 @@ fun MusicCassetteWidget(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // 歌曲信息（点击唤醒播放器，不切歌）
+            // 歌曲信息（点击唤醒播放器）
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -226,12 +227,12 @@ fun MusicCassetteWidget(
                 MediaControlButton(
                     onClick = { viewModel.prevTrack() },
                     size = 28,
-                    enabled = hasActiveSession
+                    enabled = true   // 不再门控，始终可点，Service 内部双轨兜底
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
                         contentDescription = "上一首",
-                        tint = if (hasActiveSession) Color.White else Color.White.copy(alpha = 0.3f),
+                        tint = Color.White,
                         modifier = Modifier.size(17.dp)
                     )
                 }
@@ -253,12 +254,12 @@ fun MusicCassetteWidget(
                 MediaControlButton(
                     onClick = { viewModel.nextTrack() },
                     size = 28,
-                    enabled = hasActiveSession
+                    enabled = true   // 不再门控
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "下一首",
-                        tint = if (hasActiveSession) Color.White else Color.White.copy(alpha = 0.3f),
+                        tint = Color.White,
                         modifier = Modifier.size(17.dp)
                     )
                 }

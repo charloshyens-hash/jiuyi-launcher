@@ -16,6 +16,8 @@ import android.util.Log
 import android.view.KeyEvent
 import com.example.weather.WeatherNotificationParser
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class JiuYiMediaService : NotificationListenerService() {
 
@@ -29,6 +31,10 @@ class JiuYiMediaService : NotificationListenerService() {
 
         private var instance: JiuYiMediaService? = null
 
+        // ── Compose 可追踪的活跃包名 Flow ─────────────────────────────────────
+        private val _activeSessionPkgFlow = MutableStateFlow("")
+        val activeSessionPkgFlow: StateFlow<String> = _activeSessionPkgFlow
+
         fun sendMediaAction(action: String) {
             instance?.performMediaAction(action)
         }
@@ -37,7 +43,6 @@ class JiuYiMediaService : NotificationListenerService() {
             return instance?.activeController?.packageName ?: ""
         }
 
-        /** 返回当前活跃播放器的 sessionActivity（用于唤醒到前台不切歌） */
         fun getSessionActivity(): PendingIntent? {
             return instance?.activeController?.sessionActivity
         }
@@ -59,6 +64,7 @@ class JiuYiMediaService : NotificationListenerService() {
             override fun onPlaybackStateChanged(state: PlaybackState?) { sendUpdate() }
             override fun onSessionDestroyed() {
                 activeController = null
+                _activeSessionPkgFlow.value = ""
                 updateActiveController()
             }
         }
@@ -67,6 +73,7 @@ class JiuYiMediaService : NotificationListenerService() {
     override fun onDestroy() {
         super.onDestroy()
         isServiceRunning = false
+        _activeSessionPkgFlow.value = ""
         if (instance == this) instance = null
     }
 
@@ -76,7 +83,6 @@ class JiuYiMediaService : NotificationListenerService() {
         val notification = sbnNotNull.notification ?: return
         val extras = notification.extras ?: return
 
-        // 1. 从通知中直接拦截 MediaSession.Token（最稳健方式）
         if (extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION)) {
             val token = extras.get(android.app.Notification.EXTRA_MEDIA_SESSION)
                     as? android.media.session.MediaSession.Token
@@ -90,10 +96,7 @@ class JiuYiMediaService : NotificationListenerService() {
             }
         }
 
-        // 2. 兜底：解析音乐通知文本
         tryParseMusicNotification(sbnNotNull)
-
-        // 3. 天气通知解析 → 委托给 WeatherNotificationParser（职责分离）
         WeatherNotificationParser.tryParse(this, sbnNotNull)
     }
 
@@ -163,12 +166,14 @@ class JiuYiMediaService : NotificationListenerService() {
             try { activeController?.unregisterCallback(controllerListener!!) } catch (e: Exception) {}
             activeController = controller
             try { activeController?.registerCallback(controllerListener!!) } catch (e: Exception) {}
+            _activeSessionPkgFlow.value = controller.packageName ?: ""
             sendUpdate()
             return
         }
         try { activeController?.unregisterCallback(controllerListener!!) } catch (e: Exception) {}
         activeController = controller
         try { activeController?.registerCallback(controllerListener!!) } catch (e: Exception) {}
+        _activeSessionPkgFlow.value = controller.packageName ?: ""
         sendUpdate()
     }
 
@@ -182,6 +187,7 @@ class JiuYiMediaService : NotificationListenerService() {
                 }
                 bindNewController(playingController ?: controllers.first())
             } else {
+                _activeSessionPkgFlow.value = ""
                 sendUpdate()
             }
         } catch (e: Exception) {
@@ -189,7 +195,6 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
-    // ── 媒体键分发（通用，适配所有播放器） ────────────────────────────────────
     private fun dispatchKey(keyCode: Int) {
         try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
@@ -201,33 +206,17 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
-    /**
-     * 执行媒体控制指令
-     *
-     * 双轨策略，兼容所有播放器：
-     *   轨道1 — TransportControls（MediaSession API）：精准控制已注册 Session 的播放器
-     *   轨道2 — AudioManager.dispatchMediaKeyEvent（系统媒体键）：兜底路由
-     *
-     * 为何需要双轨：
-     *   网易云、QQ音乐等在暂停/停止状态下，transportControls.play() 可能被忽略，
-     *   但系统媒体键走 AudioManager 路由，绕过 Session API，几乎对所有播放器有效。
-     *   两者同时发出，哪条先到哪条生效，不会重复触发（播放器内部有防抖）。
-     */
     fun performMediaAction(action: String) {
         if (activeController == null) updateActiveController()
         val controller = activeController
-
         try {
             when (action) {
                 "play_pause" -> {
                     val state = controller?.playbackState?.state
                     if (state == PlaybackState.STATE_PLAYING) {
-                        // 正在播放 → 暂停：两轨同时发
                         controller?.transportControls?.pause()
                         dispatchKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
                     } else {
-                        // 暂停 / 停止 / 未知 → 播放
-                        // 先发系统键（更快绕过 Session 限制），再发 TransportControls
                         dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
                         controller?.transportControls?.play()
                     }
@@ -246,7 +235,6 @@ class JiuYiMediaService : NotificationListenerService() {
         }
     }
 
-    // ── 核心广播：封面 Base64 + 播放进度 ──────────────────────────────────────
     private fun sendUpdate() {
         val controller = activeController
         val metadata = controller?.metadata
