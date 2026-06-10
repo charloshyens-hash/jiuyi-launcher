@@ -278,7 +278,7 @@ fun RetroFlipClock(
         horizontalArrangement = Arrangement.Center,
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x3B0F172A))
+            .background(Color(0x3B131313)) // Jiuyi translucent dark glass
             .padding(vertical = 4.dp)
     ) {
         Row(
@@ -382,7 +382,7 @@ fun FlipNumberBox(number: String, themeColor: Color) {
             .size(width = 86.dp, height = 75.dp)
             .shadow(6.dp, RoundedCornerShape(14.dp))
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xE10B0F19))
+            .background(Color(0xE1131313)) // Jiuyi retro dark glass
             .drawBehind {
                 // Split line representing retro flipping plates horizontal slit
                 drawLine(

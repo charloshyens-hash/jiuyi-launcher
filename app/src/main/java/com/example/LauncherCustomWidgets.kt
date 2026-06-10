@@ -45,7 +45,7 @@ fun LauncherCustomWidgets(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xD90F172A)
+            containerColor = Color(0xB3131313) // Jiuyi Desktop 70% glassmorphic background
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 5.dp)
     ) {

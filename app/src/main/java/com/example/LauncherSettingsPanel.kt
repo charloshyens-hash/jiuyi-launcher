@@ -50,11 +50,12 @@ fun LauncherSettingsPanel(
 
     // Dock slot editor active state helper
     var activeDockSlotSelector by remember { mutableStateOf<Int?>(null) }
+    var showCustomPlayerSelector by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A)) // Sleek Premium Charcoal
+            .background(Color(0xFF131313)) // Jiuyi Surface #131313
             .navigationBarsPadding()
             .statusBarsPadding()
     ) {
@@ -89,39 +90,213 @@ fun LauncherSettingsPanel(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section 1: Visual Theme Presets
+            // Section 1: Appearance Customization ("外观定制")
             item {
-                SettingsCategoryCard(title = "设计质感与配色主题", icon = Icons.Outlined.Palette, themeColor = themeColor) {
+                SettingsCategoryCard(title = "外观定制", icon = Icons.Outlined.Palette, themeColor = themeColor) {
                     Text(
-                        text = "选择属于久以桌面的品牌基调。高亮状态、时钟文本与Dock均会自适应改变色彩。",
-                        color = Color.White.copy(alpha = 0.5f),
+                        text = "在这里您可以完全个性化定制您的久以智能桌面外观，包括应用图标包风格、全局系统品牌色彩以及酷炫的动态物理壁纸特效。",
+                        color = Color.White.copy(alpha = 0.6f),
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    // 1. Theme Color (主体色) Subsection
+                    Text(
+                        text = "主体色配置",
+                        color = themeColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
                     
-                    val colors = listOf(
-                        Triple("暖阳橙杏 (新默认主题)", Color(0xFFFA5F3D), 0),
-                        Triple("太空靛蓝", Color(0xFF6366F1), 1),
-                        Triple("极光霓虹", Color(0xFF06B6D4), 2),
-                        Triple("森林祖母", Color(0xFF10B981), 3),
-                        Triple("微甜嫣粉", Color(0xFFEC4899), 4),
-                        Triple("秋叶琥珀", Color(0xFFF59E0B), 5)
+                    // List of 6 thematic color choices
+                    val colorOptions = listOf(
+                        Triple("暖阳橙杏", Color(0xFFFA5F3D), "明亮柔和橙杏色"),
+                        Triple("极光霓虹", Color(0xFF00D1FF), "幻白绚丽极光青"),
+                        Triple("极客黛蓝", Color(0xFF6366F1), "深度数码极客蓝"),
+                        Triple("翡翠初碧", Color(0xFF10B981), "生机盎然原生态翠"),
+                        Triple("蔷薇电粉", Color(0xFFEC4899), "超次元蔷薇幻影红"),
+                        Triple("琥珀金芒", Color(0xFFF59E0B), "复古辉耀金色光芒")
                     )
-                    colors.forEach { (name, color, index) ->
-                        val isSelected = currentThemeIndex == index
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.updateTheme(index) }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.size(16.dp).background(color, shape = CircleShape))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(text = name, color = Color.White, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (isSelected) {
-                                Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = themeColor)
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x08FFFFFF), shape = RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        colorOptions.forEachIndexed { index, (name, colorVal, desc) ->
+                            val isSelected = currentThemeIndex == index
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.updateTheme(index) }
+                                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .background(colorVal, shape = CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = name,
+                                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = desc,
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = themeColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // 2. Icon Pack Management (图标包管理) Subsection
+                    Text(
+                        text = "图标包管理",
+                        color = themeColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    val packages = listOf(
+                        Triple("Minimalist", "极简极光 (Minimalist)", "纯色气泡与纤柔极简高光混合"),
+                        Triple("Vintage Pixel", "极经典像素 (Vintage Pixel)", "硬核像素色块拼贴搭配亚克力质感"),
+                        Triple("Sketch Outline", "手绘钢笔轮廓 (Sketch Outline)", "暗炭黑原画素描透视拟真轮廓"),
+                        Triple("Raw Native", "原生全景图标 (Raw Native)", "无任何蒙版覆盖的纯生态原厂图标")
+                    )
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x08FFFFFF), shape = RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        packages.forEach { (filterKey, titleTxt, descTxt) ->
+                            val isSelected = iconPackFilter == filterKey
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.updateIconPackFilter(filterKey) }
+                                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = when (filterKey) {
+                                        "Minimalist" -> Icons.Default.BrightnessLow
+                                        "Vintage Pixel" -> Icons.Default.GridOn
+                                        "Sketch Outline" -> Icons.Default.Gesture
+                                        else -> Icons.Default.Android
+                                    },
+                                    contentDescription = null,
+                                    tint = if (isSelected) themeColor else Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = titleTxt,
+                                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = descTxt,
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.RadioButtonChecked,
+                                        contentDescription = null,
+                                        tint = themeColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // 3. Wallpaper Management (壁纸管理) Subsection
+                    Text(
+                        text = "壁纸展示管理",
+                        color = themeColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    val wallPapers = listOf("Warm Sunlight", "Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate")
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x08FFFFFF), shape = RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        wallPapers.forEach { wp ->
+                            val isSelected = wallpaperName == wp
+                            val title = when (wp) {
+                                "Warm Sunlight" -> "温暖柔和初照阳晨 (明亮暖色)"
+                                "Cosmic Wave" -> "慢速流体宇宙波线粒子"
+                                "Interactive Matrix" -> "黑客帝国祖母绿字符代码雨"
+                                "Starfield Warp" -> "3D太空星域物理偏航星轨"
+                                else -> "微粒子毛玻璃复古岩炭暗灰 (省电)"
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.updateWallpaper(wp) }
+                                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Landscape,
+                                    contentDescription = null,
+                                    tint = if (isSelected) themeColor else Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = themeColor
+                                    )
+                                }
                             }
                         }
                     }
@@ -146,39 +321,6 @@ fun LauncherSettingsPanel(
                                     "Retro Flip" -> "91复古分局翻页钟  (建议用于全景背景)"
                                     "Minimalist" -> "太空黑极简超大双行表"
                                     else -> "古典重金属圆盘时钟 (画布平移秒针)"
-                                },
-                                color = Color.White,
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (isSelected) {
-                                Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = themeColor)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Section 3: Wallpaper
-            item {
-                SettingsCategoryCard(title = "动态壁纸引擎", icon = Icons.Outlined.Landscape, themeColor = themeColor) {
-                    val wallPapers = listOf("Warm Sunlight", "Cosmic Wave", "Interactive Matrix", "Starfield Warp", "Minimal Slate")
-                    wallPapers.forEach { wp ->
-                        val isSelected = wallpaperName == wp
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.updateWallpaper(wp) }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = when (wp) {
-                                    "Warm Sunlight" -> "温暖柔和初照阳晨 (明亮暖色默认)"
-                                    "Cosmic Wave" -> "慢速粒子宇宙流体波线"
-                                    "Interactive Matrix" -> "黑客帝国祖母绿字符数字雨"
-                                    "Starfield Warp" -> "3D太空火箭光速飞行光弧"
-                                    else -> "微粒子毛玻璃复古岩炭暗灰 (完全省电)"
                                 },
                                 color = Color.White,
                                 fontSize = 13.sp
@@ -402,9 +544,14 @@ fun LauncherSettingsPanel(
                         val players = listOf(
                             Pair("网易云音乐 (已支持原生控制)", "com.netease.cloudmusic"),
                             Pair("QQ音乐 (已支持原生控制)", "com.tencent.qqmusic"),
-                            Pair("酷狗音乐 (已支持原生控制)", "com.kugou.android"),
-                            Pair("系统自带音频播放器", "com.android.music")
+                            Pair("酷狗音乐 (已支持原生控制)", "com.kugou.android")
                         )
+
+                        val isCustomSelected = preferredMusicPackage.isNotEmpty() && players.none { it.second == preferredMusicPackage }
+                        val customAppLabel = if (isCustomSelected) {
+                            val matchingApp = appList.firstOrNull { it.packageName == preferredMusicPackage }
+                            if (matchingApp != null) "${matchingApp.label} (已自定义绑定)" else "未命名播放器 ($preferredMusicPackage)"
+                        } else null
 
                         players.forEach { (name, pkg) ->
                             val isSelected = preferredMusicPackage == pkg
@@ -428,6 +575,44 @@ fun LauncherSettingsPanel(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
+                        }
+
+                        if (isCustomSelected && customAppLabel != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.updatePreferredMusicPackage(preferredMusicPackage) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .background(themeColor, shape = CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = customAppLabel,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showCustomPlayerSelector = true }
+                                .background(Color(0x0CFFFFFF))
+                                .padding(vertical = 8.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = themeColor, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "添加并绑定其他播放应用", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
@@ -488,7 +673,7 @@ fun LauncherSettingsPanel(
     activeDockSlotSelector?.let { slotIdx ->
         AlertDialog(
             onDismissRequest = { activeDockSlotSelector = null },
-            containerColor = Color(0xFF1E293B),
+            containerColor = Color(0xFF1C1B1B),
             title = { Text("将应用绑定至 Dock 第 ${slotIdx + 1} 卡位", color = Color.White, fontSize = 15.sp) },
             text = {
                 LazyColumn(
@@ -540,6 +725,46 @@ fun LauncherSettingsPanel(
             },
             confirmButton = {
                 TextButton(onClick = { activeDockSlotSelector = null }) {
+                    Text("取消", color = themeColor)
+                }
+            }
+        )
+    }
+
+    if (showCustomPlayerSelector) {
+        AlertDialog(
+            onDismissRequest = { showCustomPlayerSelector = false },
+            containerColor = Color(0xFF1C1B1B),
+            title = { Text("选择要绑定的音乐播放应用", color = Color.White, fontSize = 15.sp) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(appList.size) { appIdx ->
+                        val app = appList[appIdx]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.updatePreferredMusicPackage(app.packageName)
+                                    showToast("已成功绑定首选播放应用为: ${app.label}")
+                                    showCustomPlayerSelector = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.MusicNote, contentDescription = null, tint = themeColor, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = app.label, color = Color.White, fontSize = 13.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCustomPlayerSelector = false }) {
                     Text("取消", color = themeColor)
                 }
             }

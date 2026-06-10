@@ -136,7 +136,7 @@ class LauncherPrefs(context: Context) {
     }
 
     var themeColorIndex: Int
-        get() = prefs.getInt(KEY_THEME_COLOR_INDEX, 0) // 0: Indigo, 1: Cyan, 2: Teal, 3: Pink, 4: Amber
+        get() = prefs.getInt(KEY_THEME_COLOR_INDEX, 2) // 2: Geek PurpleBlue, with fallback choices customizable
         set(value) = prefs.edit().putInt(KEY_THEME_COLOR_INDEX, value).apply()
 
     var clockStyle: String
@@ -160,7 +160,7 @@ class LauncherPrefs(context: Context) {
         set(value) = prefs.edit().putString(KEY_DRAWER_GRID, value).apply()
 
     var iconPackFilter: String
-        get() = prefs.getString(KEY_ICON_PACK_FILTER, "Minimalist") ?: "Minimalist" // "Minimalist", "Vintage Pixel", "Sketch Outline", "Raw Native"
+        get() = prefs.getString(KEY_ICON_PACK_FILTER, "Sketch Outline") ?: "Sketch Outline" // Default to Hand-drawn Sketch outline
         set(value) = prefs.edit().putString(KEY_ICON_PACK_FILTER, value).apply()
 
     // Dock consists of a JSON or comma-separated list of package names.

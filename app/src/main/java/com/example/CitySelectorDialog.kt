@@ -88,7 +88,7 @@ fun CitySelectorDialog(
                 .padding(horizontal = 24.dp)
                 .clickable(enabled = false) {},
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xF21E293B)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xCC131313)),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(

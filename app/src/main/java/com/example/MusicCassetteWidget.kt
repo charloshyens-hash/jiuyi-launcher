@@ -92,6 +92,59 @@ fun MusicCassetteWidget(
     )
 
     var isExpanded by remember { mutableStateOf(false) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+
+    if (showPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDialog = false },
+            title = {
+                Text(
+                    text = "音乐控制授权提醒",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "同步显示歌名、歌手、进度条等信息需要获取系统的【通知使用权】权限。\n\n由于 Android 系统的安全隐私机制，第三方软件无法自动获取该权限，必须由您手动在系统设置中找到并勾选此应用。\n\n点击“允许去开启”后，系统将为您打开设置页，请开启本软件的【通知使用权】开关。",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPermissionDialog = false
+                        try {
+                            context.startActivity(
+                                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        } catch (e: Exception) {
+                            try {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } catch (ex: Exception) {}
+                        }
+                    }
+                ) {
+                    Text("允许并去开启", color = themeColor, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPermissionDialog = false }
+                ) {
+                    Text("禁止", color = Color.White.copy(alpha = 0.6f))
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 
     // ── 未授权：整个卡片点击跳授权设置 ──────────────────────────────────────
     if (!hasPermission) {
@@ -99,19 +152,7 @@ fun MusicCassetteWidget(
             modifier = modifier
                 .fillMaxWidth()
                 .clickable {
-                    try {
-                        context.startActivity(
-                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    } catch (e: Exception) {
-                        try {
-                            context.startActivity(
-                                Intent(Settings.ACTION_SETTINGS)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        } catch (ex: Exception) {}
-                    }
+                    showPermissionDialog = true
                 }
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center

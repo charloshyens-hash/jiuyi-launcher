@@ -303,7 +303,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun updateMusicWidgetMode(mode: Int) { prefs.musicWidgetMode = mode; musicWidgetMode.value = mode }
-    fun updatePreferredMusicPackage(pkg: String) { prefs.preferredMusicPackage = pkg; preferredMusicPackage.value = pkg }
+    fun updatePreferredMusicPackage(pkg: String) { 
+        prefs.preferredMusicPackage = pkg
+        preferredMusicPackage.value = pkg 
+        
+        // Reset music widget state to default immediately when switching player apps
+        currentTrackName = "久以金曲"
+        currentTrackArtist = "打开任意音乐播放器即可显示"
+        isMusicPlaying = false
+        currentPosition = 0L
+        currentDuration = 0L
+        currentArtBase64 = ""
+
+        if (JiuYiMediaService.isServiceRunning) {
+            JiuYiMediaService.onPreferredPackageChanged()
+        }
+    }
 
     fun launchPreferredMusicApp(context: Context) {
         try {
@@ -335,6 +350,72 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         } catch (e: Exception) {
             android.util.Log.e("LauncherVM", "Error dispatching media key: ${e.message}")
+        }
+    }
+
+    fun sendMediaKeyToPackage(pkg: String, keyCode: Int) {
+        if (pkg.isEmpty()) return
+        try {
+            val context = getApplication<Application>()
+            val pm = context.packageManager
+            val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
+            mediaButtonIntent.setPackage(pkg)
+
+            val now = android.os.SystemClock.uptimeMillis()
+            val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0)
+            val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0)
+
+            // Try to send to service first
+            val services = pm.queryIntentServices(mediaButtonIntent, 0)
+            if (!services.isNullOrEmpty()) {
+                for (resolved in services) {
+                    val svcIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                        component = android.content.ComponentName(resolved.serviceInfo.packageName, resolved.serviceInfo.name)
+                        putExtra(Intent.EXTRA_KEY_EVENT, keyDown)
+                    }
+                    val svcIntentUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                        component = android.content.ComponentName(resolved.serviceInfo.packageName, resolved.serviceInfo.name)
+                        putExtra(Intent.EXTRA_KEY_EVENT, keyUp)
+                    }
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            context.startForegroundService(svcIntent)
+                            context.startForegroundService(svcIntentUp)
+                        } else {
+                            context.startService(svcIntent)
+                            context.startService(svcIntentUp)
+                        }
+                    } catch (e: Exception) {
+                        try {
+                            context.startService(svcIntent)
+                            context.startService(svcIntentUp)
+                        } catch (ex: Exception) {}
+                    }
+                }
+            }
+
+            // Also try to send to receiver
+            val receivers = pm.queryBroadcastReceivers(mediaButtonIntent, 0)
+            if (!receivers.isNullOrEmpty()) {
+                for (resolved in receivers) {
+                    val componentName = android.content.ComponentName(
+                        resolved.activityInfo.packageName,
+                        resolved.activityInfo.name
+                    )
+                    val intentDown = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                        component = componentName
+                        putExtra(Intent.EXTRA_KEY_EVENT, keyDown)
+                    }
+                    val intentUp = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                        component = componentName
+                        putExtra(Intent.EXTRA_KEY_EVENT, keyUp)
+                    }
+                    context.sendBroadcast(intentDown)
+                    context.sendBroadcast(intentUp)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherVM", "sendMediaKeyToPackage failed: ${e.message}")
         }
     }
 
@@ -413,12 +494,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val pm = context.packageManager
             val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
             mediaButtonIntent.setPackage(pkg)
-            val receivers = pm.queryBroadcastReceivers(mediaButtonIntent, 0)
             
             val now = android.os.SystemClock.uptimeMillis()
             val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
             val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP,   android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
-            
+
+            // Try to start registered services handling ACTION_MEDIA_BUTTON explicitly
+            try {
+                val services = pm.queryIntentServices(mediaButtonIntent, 0)
+                if (!services.isNullOrEmpty()) {
+                    for (resolved in services) {
+                        val svcIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                            component = android.content.ComponentName(resolved.serviceInfo.packageName, resolved.serviceInfo.name)
+                            putExtra(Intent.EXTRA_KEY_EVENT, keyDown)
+                        }
+                        try {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.startForegroundService(svcIntent)
+                            } else {
+                                context.startService(svcIntent)
+                            }
+                        } catch (e: Exception) {
+                            try { context.startService(svcIntent) } catch (ex: Exception) {}
+                        }
+                    }
+                }
+            } catch (e: Exception) {}
+
+            val receivers = pm.queryBroadcastReceivers(mediaButtonIntent, 0)
             if (!receivers.isNullOrEmpty()) {
                 val componentName = android.content.ComponentName(
                     receivers[0].activityInfo.packageName,
@@ -449,6 +552,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } catch (e: Exception) {
             android.util.Log.e("LauncherVM", "wakeMusicAppBackground failed: ${e.message}")
         }
+        
+        // Also send a general system-wide PLAY key to kickstart standard players like com.android.music
+        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
     }
 
     private fun connectAndPlayViaMediaBrowser(pkg: String) {
@@ -519,21 +625,43 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      *    随后若已建立会话，直接调用精准控制，否则通用系统媒体键兜底触发播放。
      */
     fun toggleMusicPlayback() {
-        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+        val targetPkg = preferredMusicPackage.value
+        if (targetPkg.isNotEmpty()) {
+            val activePkg = JiuYiMediaService.getActiveSessionPkg()
+            if (JiuYiMediaService.isServiceRunning && activePkg == targetPkg) {
+                JiuYiMediaService.sendMediaAction("play_pause")
+            } else {
+                connectAndPlayViaMediaBrowser(targetPkg)
+                wakeMusicAppBackground(targetPkg)
+                viewModelScope.launch {
+                    delay(800)
+                    if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+                        JiuYiMediaService.sendMediaAction("play_pause")
+                    } else {
+                        val keyCode = if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE else android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+                        sendMediaKeyToPackage(targetPkg, keyCode)
+                        dispatchSystemMediaKey(keyCode)
+                    }
+                }
+            }
+            return
+        }
+
+        if (JiuYiMediaService.isServiceRunning) {
             JiuYiMediaService.sendMediaAction("play_pause")
             return
         }
 
-        val targetPkg = preferredMusicPackage.value.ifEmpty { findAnyInstalledMusicPackage() }
-        if (targetPkg.isNotEmpty()) {
-            connectAndPlayViaMediaBrowser(targetPkg)
-            wakeMusicAppBackground(targetPkg)
+        val fallbackPkg = findAnyInstalledMusicPackage()
+        if (fallbackPkg.isNotEmpty()) {
+            connectAndPlayViaMediaBrowser(fallbackPkg)
+            wakeMusicAppBackground(fallbackPkg)
             viewModelScope.launch {
                 delay(800)
-                if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+                if (JiuYiMediaService.isServiceRunning) {
                     JiuYiMediaService.sendMediaAction("play_pause")
                 } else {
-                    dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+                    dispatchSystemMediaKey(if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE else android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
                 }
             }
         } else {
@@ -542,7 +670,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun nextTrack() {
-        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+        val targetPkg = preferredMusicPackage.value
+        if (targetPkg.isNotEmpty()) {
+            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+                JiuYiMediaService.sendMediaAction("next")
+            } else {
+                sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+            }
+            return
+        }
+        if (JiuYiMediaService.isServiceRunning) {
             JiuYiMediaService.sendMediaAction("next")
             return
         }
@@ -550,7 +688,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun prevTrack() {
-        if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg().isNotEmpty()) {
+        val targetPkg = preferredMusicPackage.value
+        if (targetPkg.isNotEmpty()) {
+            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+                JiuYiMediaService.sendMediaAction("prev")
+            } else {
+                sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            }
+            return
+        }
+        if (JiuYiMediaService.isServiceRunning) {
             JiuYiMediaService.sendMediaAction("prev")
             return
         }
@@ -603,7 +751,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             isMusicPlaying  = isPlaying
             currentPosition = position
             currentDuration = duration
-            if (artBase64.isNotEmpty()) currentArtBase64 = artBase64
+            if (artBase64.isNotEmpty()) {
+                currentArtBase64 = artBase64
+            } else {
+                currentArtBase64 = ""
+            }
         }
     }
 

@@ -24,6 +24,8 @@ class JiuYiMediaService : NotificationListenerService() {
     private var sessionManager: MediaSessionManager? = null
     private var controllerListener: MediaController.Callback? = null
     private var activeController: MediaController? = null
+    private var lastIsPlaying = false
+    private var prefsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     companion object {
         const val ACTION_MEDIA_UPDATE = "com.example.LAUNCHER_MEDIA_UPDATE"
@@ -50,6 +52,10 @@ class JiuYiMediaService : NotificationListenerService() {
         fun requestRefresh() {
             instance?.sendUpdate()
         }
+
+        fun onPreferredPackageChanged() {
+            instance?.updateActiveController()
+        }
     }
 
     override fun onCreate() {
@@ -68,6 +74,19 @@ class JiuYiMediaService : NotificationListenerService() {
                 updateActiveController()
             }
         }
+
+        try {
+            val sharedPrefs = getSharedPreferences("jiuyi_launcher_prefs", Context.MODE_PRIVATE)
+            prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == "preferred_music_package") {
+                    Log.d("JiuYiMedia", "preferred_music_package changed in SharedPreferences! Refreshing active controller...")
+                    updateActiveController()
+                }
+            }
+            sharedPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        } catch (e: Exception) {
+            Log.e("JiuYiMedia", "Error registering prefsListener: ${e.message}")
+        }
     }
 
     override fun onDestroy() {
@@ -75,6 +94,12 @@ class JiuYiMediaService : NotificationListenerService() {
         isServiceRunning = false
         _activeSessionPkgFlow.value = ""
         if (instance == this) instance = null
+        try {
+            if (prefsListener != null) {
+                val sharedPrefs = getSharedPreferences("jiuyi_launcher_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
+            }
+        } catch (e: Exception) {}
     }
 
     override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {
@@ -89,7 +114,10 @@ class JiuYiMediaService : NotificationListenerService() {
             if (token != null) {
                 try {
                     val controller = MediaController(this, token)
-                    bindNewController(controller)
+                    val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
+                    if (preferredPkg.isEmpty() || controller.packageName == preferredPkg) {
+                        bindNewController(controller)
+                    }
                 } catch (e: Exception) {
                     Log.e("JiuYiMedia", "Error binding controller from notification: ${e.message}")
                 }
@@ -110,7 +138,13 @@ class JiuYiMediaService : NotificationListenerService() {
             val pkg = sbn.packageName ?: ""
             val extras = sbn.notification?.extras ?: return
 
-            val isMusicApp = pkg.contains("music", ignoreCase = true) ||
+            val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
+            if (preferredPkg.isNotEmpty() && pkg != preferredPkg) {
+                return
+            }
+
+            val isMusicApp = (preferredPkg.isNotEmpty() && pkg == preferredPkg) ||
+                    pkg.contains("music", ignoreCase = true) ||
                     pkg.contains("player", ignoreCase = true) ||
                     pkg.contains("kugou", ignoreCase = true) ||
                     pkg.contains("kuwo", ignoreCase = true) ||
@@ -135,6 +169,7 @@ class JiuYiMediaService : NotificationListenerService() {
                         putExtra("position", 0L)
                         putExtra("duration", 0L)
                     }
+                    lastIsPlaying = true
                     sendBroadcast(intent)
                 }
             }
@@ -162,6 +197,10 @@ class JiuYiMediaService : NotificationListenerService() {
     }
 
     private fun bindNewController(controller: MediaController) {
+        val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
+        if (preferredPkg.isNotEmpty() && controller.packageName != preferredPkg) {
+            return
+        }
         if (activeController?.packageName == controller.packageName) {
             try { activeController?.unregisterCallback(controllerListener!!) } catch (e: Exception) {}
             activeController = controller
@@ -179,13 +218,24 @@ class JiuYiMediaService : NotificationListenerService() {
 
     private fun updateActiveController() {
         try {
+            val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
             val component = ComponentName(this, JiuYiMediaService::class.java)
             val controllers = sessionManager?.getActiveSessions(component)
             if (!controllers.isNullOrEmpty()) {
-                val playingController = controllers.firstOrNull {
-                    it.playbackState?.state == PlaybackState.STATE_PLAYING
+                val target = if (preferredPkg.isNotEmpty()) {
+                    controllers.firstOrNull { it.packageName == preferredPkg }
+                } else {
+                    controllers.firstOrNull {
+                        it.playbackState?.state == PlaybackState.STATE_PLAYING
+                    } ?: controllers.first()
                 }
-                bindNewController(playingController ?: controllers.first())
+                if (target != null) {
+                    bindNewController(target)
+                } else {
+                    activeController = null
+                    _activeSessionPkgFlow.value = ""
+                    sendUpdate()
+                }
             } else {
                 _activeSessionPkgFlow.value = ""
                 sendUpdate()
@@ -227,14 +277,29 @@ class JiuYiMediaService : NotificationListenerService() {
         try {
             when (action) {
                 "play_pause" -> {
-                    val state = controller?.playbackState?.state
-                    if (state == PlaybackState.STATE_PLAYING) {
-                        controller?.transportControls?.pause()
-                        dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                    if (controller != null) {
+                        val state = controller.playbackState?.state
+                        if (state == PlaybackState.STATE_PLAYING) {
+                            controller.transportControls?.pause()
+                            dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                        } else {
+                            // Use KEYCODE_MEDIA_PLAY to make the action idempotent and prevent cancellation
+                            dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PLAY)
+                            controller.transportControls?.play()
+                        }
                     } else {
-                        // Use KEYCODE_MEDIA_PLAY to make the action idempotent and prevent cancellation
-                        dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PLAY)
-                        controller?.transportControls?.play()
+                        if (lastIsPlaying) {
+                            dispatchKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+                            lastIsPlaying = false
+                        } else {
+                            dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+                            lastIsPlaying = true
+                        }
+                        val intent = Intent(ACTION_MEDIA_UPDATE).apply {
+                            setPackage(packageName)
+                            putExtra("is_playing", lastIsPlaying)
+                        }
+                        sendBroadcast(intent)
                     }
                 }
                 "next" -> {
@@ -259,6 +324,7 @@ class JiuYiMediaService : NotificationListenerService() {
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
         val isPlaying = state?.state == PlaybackState.STATE_PLAYING
+        lastIsPlaying = isPlaying
         val position = state?.position ?: 0L
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
 

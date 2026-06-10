@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -47,12 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.WarmSunOrange
-import com.example.ui.theme.PurpleBlue
 import com.example.ui.theme.NeonCyan
-import com.example.ui.theme.EmeraldTeal
-import com.example.ui.theme.VelvetPink
-import com.example.ui.theme.AmberYellow
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
@@ -80,13 +77,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         
         setContent {
-            MyApplicationTheme {
-                val themeColorIndex by viewModel.currentThemeIndex.collectAsState()
-                
-                // Get the synchronized active color
-                val themeColors = listOf(WarmSunOrange, PurpleBlue, NeonCyan, EmeraldTeal, VelvetPink, AmberYellow)
-                val activeThemeColor = themeColors.getOrElse(themeColorIndex) { WarmSunOrange }
+            val themeIndex by viewModel.currentThemeIndex.collectAsState()
+            val themeColors = listOf(
+                Color(0xFFFA5F3D), // 暖阳橙杏 (WarmSunOrange)
+                Color(0xFF00D1FF), // 极光霓虹 (NeonCyan)
+                Color(0xFF6366F1), // 极客黛蓝 (PurpleBlue)
+                Color(0xFF10B981), // 翡翠初碧 (EmeraldTeal)
+                Color(0xFFEC4899), // 蔷薇电粉 (VelvetPink)
+                Color(0xFFF59E0B)  // 琥珀金芒 (AmberYellow)
+            )
+            val activeThemeColor = themeColors.getOrElse(themeIndex) { Color(0xFFFA5F3D) }
 
+            MyApplicationTheme(primaryColor = activeThemeColor) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = Color.Black
@@ -162,7 +164,6 @@ fun LauncherHomeScreen(
     themeColor: Color
 ) {
     val context = LocalContext.current
-    val themeColorIndex by viewModel.currentThemeIndex.collectAsState()
     
     // UI Panel visibility states
     var isAppDrawerOpen by remember { mutableStateOf(false) }
@@ -367,7 +368,7 @@ fun LauncherHomeScreen(
                     .shadow(12.dp, RoundedCornerShape(24.dp)),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xC70F172A) // Sleek Premium frosted Dark Glass
+                    containerColor = Color(0xB3131313) // Jiuyi Desktop 70% glassmorphic overlay of surface #131313
                 ),
                 border = BorderStroke(1.dp, Color(0x1AFFFFFF))
             ) {
@@ -430,24 +431,32 @@ fun LauncherHomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             if (isTrigger) {
+                                val infiniteTransition = rememberInfiniteTransition(label = "breathe")
+                                val breatheScale by infiniteTransition.animateFloat(
+                                    initialValue = 0.93f,
+                                    targetValue = 1.07f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(1400, easing = EaseInOutSine),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "scale"
+                                )
                                 Box(
                                     modifier = Modifier
-                                        .size(50.dp)
-                                        .shadow(4.dp, CircleShape)
+                                        .size(56.dp) // Original design: w-14 h-14 is 56.dp
+                                        .shadow(6.dp, CircleShape)
+                                        .graphicsLayer(scaleX = breatheScale, scaleY = breatheScale)
+                                        .border(4.dp, themeColor.copy(alpha = 0.3f), CircleShape) // Original design: border-4 border-primary/30
                                         .clip(CircleShape)
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(themeColor, themeColor.copy(alpha = 0.7f))
-                                            )
-                                        )
+                                        .background(themeColor) // Original design: bg-primary
                                         .clickable { isAppDrawerOpen = true },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Apps,
-                                        contentDescription = "开启应用抽屉",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                    // Original design: inner filled circle core symbol
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .background(Color.White, shape = CircleShape)
                                     )
                                 }
                             } else {
@@ -484,95 +493,101 @@ fun LauncherHomeScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xD8000000)) // Translucent matte dim background
+                    .background(Color(0xB3000000)) // Translucent matte dim background
                     .clickable { isGesturePanelOpen = false },
                 contentAlignment = Alignment.Center
             ) {
-                // Frosted card holding 4x2 functioning icons
+                // Frosted card holding 4x2 functioning icons matching original git repository design specs
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
+                        .padding(horizontal = 20.dp)
                         .clickable(enabled = false) {}, // prevent click-through
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xF21E293B)),
+                    shape = RoundedCornerShape(32.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xEC131313)),
+                    border = BorderStroke(1.dp, Color(0x1AFFFFFF)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
+                        modifier = Modifier.padding(vertical = 24.dp, horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = "久以轻手势 • 半透明功能层",
-                            color = themeColor,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                        // Top drag handle indicator matching code.html
+                        Box(
+                            modifier = Modifier
+                                .width(48.dp)
+                                .height(4.dp)
+                                .background(Color.White.copy(alpha = 0.3f), shape = CircleShape)
                         )
                         
+                        Spacer(modifier = Modifier.height(18.dp))
+
                         Text(
-                            text = "内置酷炫动力学组件与复古91交互，体验极致定制魅力",
-                            color = Color.White.copy(alpha = 0.45f),
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 20.dp)
+                            text = "久以轻手势",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 24.dp)
                         )
 
-                        // 4x2 Grid layout representation
+                        // 4x2 Grid layout representation matching HTML/CSS specs
                         val gridItems = listOf(
-                            GestureMenuOption("添加小部件", Icons.Default.AddBox) {
+                            GestureMenuOption("添加", Icons.Default.Add) {
                                 isGesturePanelOpen = false
                                 isAppDrawerOpen = true
-                                showToast("请滑动转入「小部件」标签添加")
+                                showToast("请滑动至「小部件」页签长按拖拽添加")
                             },
-                            GestureMenuOption("换壁纸特效", Icons.Default.Landscape) {
+                            GestureMenuOption("换特效", Icons.Default.AutoAwesome) {
                                 isGesturePanelOpen = false
                                 isSettingsOpen = true
-                                showToast("请在设置中自选动态壁纸款式")
+                                showToast("壁纸动力学特效设置已开启")
                             },
-                            GestureMenuOption("极速美化", Icons.Default.AutoAwesome) {
+                            GestureMenuOption("快速美化", Icons.Default.Brush) {
                                 isGesturePanelOpen = false
                                 // Toggle icon filter cycle
                                 val list = listOf("Minimalist", "Vintage Pixel", "Sketch Outline", "Raw Native")
                                 val nextIdx = (list.indexOf(iconPackFilter) + 1) % list.size
                                 viewModel.updateIconPackFilter(list[nextIdx])
-                                showToast("极速美化已切换图标风格至: ${list[nextIdx]}")
+                                showToast("桌面图标样式切换为: ${list[nextIdx]}")
                             },
-                            GestureMenuOption("系统设置", Icons.Default.SystemUpdateAlt) {
+                            GestureMenuOption("系统设置", Icons.Default.Settings) {
+                                isGesturePanelOpen = false
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    isSettingsOpen = true
+                                }
+                            },
+                            GestureMenuOption("个性主题", Icons.Default.Palette) {
                                 isGesturePanelOpen = false
                                 isSettingsOpen = true
                             },
-                            GestureMenuOption("个性主题", Icons.Default.ColorLens) {
+                            GestureMenuOption("个人中心", Icons.Default.Person) {
                                 isGesturePanelOpen = false
-                                val nextIndex = (themeColorIndex + 1) % 6
-                                viewModel.updateTheme(nextIndex)
-                                showToast("已切换桌面原色主题")
+                                showToast("久以智能桌面 • 用户中心 v2.0")
                             },
-                            GestureMenuOption("加速清理", Icons.Default.Cyclone) {
+                            GestureMenuOption("屏幕预览", Icons.Default.Visibility) {
                                 isGesturePanelOpen = false
-                                viewModel.boostRam()
-                                showToast("火箭喷射！系统物理 RAM 清理运行中...")
-                            },
-                            GestureMenuOption("屏幕预览", Icons.Default.Fullscreen) {
-                                isGesturePanelOpen = false
-                                // Toggle active widgets list
                                 pinnedWidgets = if (pinnedWidgets.isEmpty()) {
                                     setOf("RAM Booster", "Music Cassette")
                                 } else {
                                     emptySet()
                                 }
-                                showToast("屏幕极简视差模式已被切换")
+                                showToast("已切换桌面极简纯净模式")
                             },
-                            GestureMenuOption("开启抽屉", Icons.Default.Apps) {
+                            GestureMenuOption("桌面设置", Icons.Default.GridView) {
                                 isGesturePanelOpen = false
-                                isAppDrawerOpen = true
+                                isSettingsOpen = true
                             }
                         )
 
                         // Draw Grid row-by-row
                         for (i in 0 until 2) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                 horizontalArrangement = Arrangement.SpaceAround
                             ) {
                                 for (j in 0 until 4) {
@@ -582,21 +597,27 @@ fun LauncherHomeScreen(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clickable { item.action() }
-                                            .padding(4.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(48.dp)
-                                                .background(themeColor.copy(alpha = 0.12f), shape = CircleShape),
+                                                .size(60.dp) // Original design: w-[60px] h-[60px]
+                                                .background(Color(0x1BFFFFFF), shape = RoundedCornerShape(20.dp)) // Original design: rounded-[20px] bg-white/10
+                                                .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(20.dp)), // Original design: border border-white/10
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(imageVector = item.icon, contentDescription = item.label, tint = themeColor)
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = item.label,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(28.dp) // Original design: text-[28px]
+                                            )
                                         }
-                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = item.label,
-                                            color = Color.White.copy(alpha = 0.8f),
-                                            fontSize = 9.sp,
+                                            color = Color.White.copy(alpha = 0.9f),
+                                            fontSize = 12.sp, // Original design centered text labels
+                                            fontWeight = FontWeight.Normal,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )

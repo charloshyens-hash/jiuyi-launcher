@@ -84,7 +84,7 @@ fun WarmSunlightWallpaper() {
 
 @Composable
 fun MinimalSlateWallpaper() {
-    Canvas(modifier = Modifier.fillMaxSize().background(Color(0xFF0F172A))) {
+    Canvas(modifier = Modifier.fillMaxSize().background(Color(0xFF131313))) {
         // Draw elegant circular glowing gradients in the corners for depth
         drawCircle(
             brush = Brush.radialGradient(

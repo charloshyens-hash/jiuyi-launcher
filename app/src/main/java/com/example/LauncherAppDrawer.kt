@@ -98,7 +98,7 @@ fun LauncherAppDrawer(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xF90B0F19)) // 91-Classic translucent dark slate
+            .background(Color(0xEB131313)) // Jiuyi Desktop 92% opacity translucent dark surface
             .windowInsetsPadding(WindowInsets.statusBars)
             .navigationBarsPadding()
     ) {
@@ -201,7 +201,7 @@ fun LauncherAppDrawer(
                         DropdownMenu(
                             expanded = showMoreMenu,
                             onDismissRequest = { showMoreMenu = false },
-                            modifier = Modifier.background(Color(0xFF1E293B))
+                            modifier = Modifier.background(Color(0xFF131313))
                         ) {
                             DropdownMenuItem(
                                 text = { Text("刷新应用程序", color = Color.White, fontSize = 13.sp) },
@@ -364,7 +364,7 @@ fun LauncherAppDrawer(
         if (isSearchDialogOpen) {
             AlertDialog(
                 onDismissRequest = { isSearchDialogOpen = false },
-                containerColor = Color(0xFF1E293B),
+                containerColor = Color(0xFF1C1B1B),
                 title = {
                     Text(
                         text = "快速搜索应用",
@@ -414,7 +414,7 @@ fun LauncherAppDrawer(
 
         AlertDialog(
             onDismissRequest = { isManageHiddenDialogOpen = false },
-            containerColor = Color(0xFF1E293B),
+            containerColor = Color(0xFF1C1B1B),
             title = {
                 Text(
                     text = "管理应用隐藏状态",
@@ -833,44 +833,20 @@ fun MyPhoneDrawerDashboard(
             )
         }
 
-        // Direct Quick themes manager list inside My Phone
-        Text("极速更换系统色彩主题", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp)
+        // Direct brand identity notice representing locked native color style
+        Text("久以桌面 • 专属品牌规范", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0x0CFFFFFF), shape = RoundedCornerShape(12.dp))
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val themesColors = listOf(
-                Pair("暖杏", Color(0xFFFA5F3D)),
-                Pair("靛青", Color(0xFF6366F1)),
-                Pair("霓虹", Color(0xFF06B6D4)),
-                Pair("祖母", Color(0xFF10B981)),
-                Pair("嫣粉", Color(0xFFEC4899)),
-                Pair("琥珀", Color(0xFFF59E0B))
-            )
-            themesColors.forEachIndexed { idx, (name, color) ->
-                val isActive = viewModel.currentThemeIndex.collectAsState().value == idx
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clickable { viewModel.updateTheme(idx) }
-                        .padding(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                            .padding(2.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isActive) {
-                            Box(modifier = Modifier.size(16.dp).background(Color.White, shape = CircleShape))
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(text = name, color = if (isActive) Color.White else Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
-                }
+            Box(modifier = Modifier.size(12.dp).background(themeColor, shape = CircleShape))
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+                Text(text = "系统设计：极光霓虹暗雅玻璃", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(text = "完美呈现 #131313 深邃岩板与 #00D1FF 霓虹高能青", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
             }
         }
     }
