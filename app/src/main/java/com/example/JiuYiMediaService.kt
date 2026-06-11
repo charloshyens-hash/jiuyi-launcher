@@ -267,8 +267,9 @@ class JiuYiMediaService : NotificationListenerService() {
             } catch (e: Exception) {
                 Log.e("JiuYiMedia", "dispatchKeyToController failed: ${e.message}")
             }
+        } else {
+            dispatchKey(keyCode)
         }
-        dispatchKey(keyCode)
     }
 
     fun performMediaAction(action: String) {

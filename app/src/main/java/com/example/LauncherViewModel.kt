@@ -552,9 +552,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } catch (e: Exception) {
             android.util.Log.e("LauncherVM", "wakeMusicAppBackground failed: ${e.message}")
         }
-        
-        // Also send a general system-wide PLAY key to kickstart standard players like com.android.music
-        dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
     }
 
     private fun connectAndPlayViaMediaBrowser(pkg: String) {
@@ -640,7 +637,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     } else {
                         val keyCode = if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE else android.view.KeyEvent.KEYCODE_MEDIA_PLAY
                         sendMediaKeyToPackage(targetPkg, keyCode)
-                        dispatchSystemMediaKey(keyCode)
                     }
                 }
             }
@@ -676,7 +672,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 JiuYiMediaService.sendMediaAction("next")
             } else {
                 sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
             }
             return
         }
@@ -694,7 +689,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 JiuYiMediaService.sendMediaAction("prev")
             } else {
                 sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-                dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
             }
             return
         }

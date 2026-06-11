@@ -79,6 +79,15 @@ fun MusicCassetteWidget(
         } else null
     }
 
+    // ── 播放状态显示本地状态（用于免授权模式） ─────────────────────────────
+    var localIsPlaying by remember { mutableStateOf(false) }
+    LaunchedEffect(isPlaying, hasPermission) {
+        if (hasPermission) {
+            localIsPlaying = isPlaying
+        }
+    }
+    val finalIsPlaying = if (hasPermission) isPlaying else localIsPlaying
+
     // ── 黑胶旋转动画 ─────────────────────────────────────────────────────────
     val infiniteTransition = rememberInfiniteTransition(label = "vinylSpin")
     val rotAngle by infiniteTransition.animateFloat(
@@ -99,7 +108,7 @@ fun MusicCassetteWidget(
             onDismissRequest = { showPermissionDialog = false },
             title = {
                 Text(
-                    text = "音乐控制授权提醒",
+                    text = "通知使用权授权说明",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -107,7 +116,7 @@ fun MusicCassetteWidget(
             },
             text = {
                 Text(
-                    text = "同步显示歌名、歌手、进度条等信息需要获取系统的【通知使用权】权限。\n\n由于 Android 系统的安全隐私机制，第三方软件无法自动获取该权限，必须由您手动在系统设置中找到并勾选此应用。\n\n点击“允许去开启”后，系统将为您打开设置页，请开启本软件的【通知使用权】开关。",
+                    text = "同步显示歌曲名称、歌手、封面和进度条，需要用到系统的【通知使用权】。\n\n由于 Android 系统的安全隐私机制，任何第三方应用都无法使用简单的弹窗直接开启该权限，必须前往系统设置中手动勾选本软件。\n\n目前即便不开启该权限，您也已经可以直接在桌面进行完美的播放/暂停、上一首、下一首切歌操作，不受任何影响！\n\n您是否仍然需要去系统设置页面开启此同步功能？",
                     fontSize = 14.sp,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -131,14 +140,14 @@ fun MusicCassetteWidget(
                         }
                     }
                 ) {
-                    Text("允许并去开启", color = themeColor, fontWeight = FontWeight.Bold)
+                    Text("去开启同步", color = themeColor, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showPermissionDialog = false }
                 ) {
-                    Text("禁止", color = Color.White.copy(alpha = 0.6f))
+                    Text("不用了", color = Color.White.copy(alpha = 0.6f))
                 }
             },
             containerColor = Color(0xFF1E1E24),
@@ -146,52 +155,40 @@ fun MusicCassetteWidget(
         )
     }
 
-    // ── 未授权：整个卡片点击跳授权设置 ──────────────────────────────────────
-    if (!hasPermission) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .clickable {
-                    showPermissionDialog = true
-                }
-                .padding(vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    VinylPlaceholder(themeColor)
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "久以金曲",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = "点此开启媒体控制权限",
-                        color = themeColor.copy(alpha = 0.9f),
-                        fontSize = 11.sp
-                    )
+    // ── 播放器文本显示优化 ─────────────────────────────────────────────────
+    val preferredPkg by viewModel.preferredMusicPackage.collectAsState()
+    val appNameLabel = remember(preferredPkg) {
+        if (preferredPkg.isEmpty()) {
+            "首选播放器"
+        } else {
+            try {
+                val pm = context.packageManager
+                val appInfo = pm.getApplicationInfo(preferredPkg, 0)
+                pm.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                when (preferredPkg) {
+                    "com.netease.cloudmusic" -> "网易云音乐"
+                    "com.tencent.qqmusic" -> "QQ音乐"
+                    "com.kugou.android" -> "酷狗音乐"
+                    else -> "已绑定的播放器"
                 }
             }
         }
-        return
     }
 
-    // ── 已授权：完整播放器卡片 ────────────────────────────────────────────────
+    val displayTrackName = if (hasPermission) {
+        trackName.ifEmpty { appNameLabel }
+    } else {
+        appNameLabel
+    }
+
+    val displayTrackArtist = if (hasPermission) {
+        trackArtist.ifEmpty { "正在播放" }
+    } else {
+        "点击此行同步歌词进度控制"
+    }
+
+    // ── 统一、始终可用：完整播放器卡片 ─────────────────────────────────────────
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -209,13 +206,13 @@ fun MusicCassetteWidget(
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .rotate(if (isPlaying) rotAngle else 0f)
+                    .rotate(if (finalIsPlaying) rotAngle else 0f)
                     .clip(CircleShape)
                     .background(Color.Black)
                     .clickable { bringPlayerToFront(context, viewModel) },
                 contentAlignment = Alignment.Center
             ) {
-                if (artBitmap != null) {
+                if (artBitmap != null && hasPermission) {
                     Image(
                         bitmap = artBitmap.asImageBitmap(),
                         contentDescription = "专辑封面",
@@ -234,14 +231,20 @@ fun MusicCassetteWidget(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // 歌曲信息（点击唤醒播放器）
+            // 歌曲信息（未授权点击弹窗，已授权点击唤醒播放器）
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { bringPlayerToFront(context, viewModel) }
+                    .clickable {
+                        if (!hasPermission) {
+                            showPermissionDialog = true
+                        } else {
+                            bringPlayerToFront(context, viewModel)
+                        }
+                    }
             ) {
                 Text(
-                    text = trackName,
+                    text = displayTrackName,
                     color = Color.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -250,8 +253,8 @@ fun MusicCassetteWidget(
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = trackArtist,
-                    color = Color.White.copy(alpha = 0.55f),
+                    text = displayTrackArtist,
+                    color = if (!hasPermission) themeColor.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.55f),
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -260,15 +263,20 @@ fun MusicCassetteWidget(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // 控制按钮：上一首 / 播放·暂停 / 下一首
+            // 控制按钮：上一首 / 播放·暂停 / 下一首 (始终可点击)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 MediaControlButton(
-                    onClick = { viewModel.prevTrack() },
+                    onClick = { 
+                        viewModel.prevTrack() 
+                        if (!hasPermission) {
+                            localIsPlaying = true
+                        }
+                    },
                     size = 28,
-                    enabled = true   // 不再门控，始终可点，Service 内部双轨兜底
+                    enabled = true
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
@@ -279,23 +287,33 @@ fun MusicCassetteWidget(
                 }
 
                 IconButton(
-                    onClick = { viewModel.toggleMusicPlayback() },
+                    onClick = { 
+                        viewModel.toggleMusicPlayback() 
+                        if (!hasPermission) {
+                            localIsPlaying = !localIsPlaying
+                        }
+                    },
                     modifier = Modifier
                         .size(36.dp)
                         .background(themeColor, CircleShape)
                 ) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        imageVector = if (finalIsPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (finalIsPlaying) "暂停" else "播放",
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
                 MediaControlButton(
-                    onClick = { viewModel.nextTrack() },
+                    onClick = { 
+                        viewModel.nextTrack() 
+                        if (!hasPermission) {
+                            localIsPlaying = true
+                        }
+                    },
                     size = 28,
-                    enabled = true   // 不再门控
+                    enabled = true
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
@@ -307,8 +325,8 @@ fun MusicCassetteWidget(
             }
         }
 
-        // 展开区域：进度条 + 时间（长按触发）
-        if (isExpanded && duration > 0L) {
+        // 展开区域：进度条 + 时间（长按触发，且已授权有数据时）
+        if (isExpanded && duration > 0L && hasPermission) {
             Spacer(modifier = Modifier.height(12.dp))
             PlaybackProgressBar(
                 position = position,
