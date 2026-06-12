@@ -33,7 +33,6 @@ class JiuYiMediaService : NotificationListenerService() {
 
         private var instance: JiuYiMediaService? = null
 
-        // ── Compose 可追踪的活跃包名 Flow ─────────────────────────────────────
         private val _activeSessionPkgFlow = MutableStateFlow("")
         val activeSessionPkgFlow: StateFlow<String> = _activeSessionPkgFlow
 
@@ -43,6 +42,19 @@ class JiuYiMediaService : NotificationListenerService() {
 
         fun getActiveSessionPkg(): String {
             return instance?.activeController?.packageName ?: ""
+        }
+
+        /**
+         * 前缀模糊匹配：解决网易云等 App 的 MediaSession 包名与安装包名不一致问题
+         * 例如 target="com.netease.cloudmusic" 可匹配 active="com.netease.cloudmusic.release"
+         */
+        fun matchesPkg(target: String): Boolean {
+            if (target.isEmpty()) return false
+            val active = getActiveSessionPkg()
+            if (active.isEmpty()) return false
+            return active == target ||
+                    active.startsWith(target) ||
+                    target.startsWith(active)
         }
 
         fun getSessionActivity(): PendingIntent? {
@@ -79,7 +91,7 @@ class JiuYiMediaService : NotificationListenerService() {
             val sharedPrefs = getSharedPreferences("jiuyi_launcher_prefs", Context.MODE_PRIVATE)
             prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (key == "preferred_music_package") {
-                    Log.d("JiuYiMedia", "preferred_music_package changed in SharedPreferences! Refreshing active controller...")
+                    Log.d("JiuYiMedia", "preferred_music_package changed, refreshing active controller...")
                     updateActiveController()
                 }
             }
@@ -115,7 +127,12 @@ class JiuYiMediaService : NotificationListenerService() {
                 try {
                     val controller = MediaController(this, token)
                     val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
-                    if (preferredPkg.isEmpty() || controller.packageName == preferredPkg) {
+                    // 用前缀匹配：允许 com.netease.cloudmusic.release 匹配 com.netease.cloudmusic
+                    val pkgMatches = preferredPkg.isEmpty() ||
+                            controller.packageName == preferredPkg ||
+                            controller.packageName.startsWith(preferredPkg) ||
+                            preferredPkg.startsWith(controller.packageName)
+                    if (pkgMatches) {
                         bindNewController(controller)
                     }
                 } catch (e: Exception) {
@@ -139,11 +156,15 @@ class JiuYiMediaService : NotificationListenerService() {
             val extras = sbn.notification?.extras ?: return
 
             val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
-            if (preferredPkg.isNotEmpty() && pkg != preferredPkg) {
-                return
+            // 前缀匹配过滤
+            if (preferredPkg.isNotEmpty()) {
+                val pkgMatches = pkg == preferredPkg ||
+                        pkg.startsWith(preferredPkg) ||
+                        preferredPkg.startsWith(pkg)
+                if (!pkgMatches) return
             }
 
-            val isMusicApp = (preferredPkg.isNotEmpty() && pkg == preferredPkg) ||
+            val isMusicApp = (preferredPkg.isNotEmpty()) ||
                     pkg.contains("music", ignoreCase = true) ||
                     pkg.contains("player", ignoreCase = true) ||
                     pkg.contains("kugou", ignoreCase = true) ||
@@ -155,7 +176,7 @@ class JiuYiMediaService : NotificationListenerService() {
                 val title = extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
                 var artist = extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
 
-                if (title.isNotEmpty() && (activeController == null || activeController?.packageName == pkg)) {
+                if (title.isNotEmpty() && (activeController == null || activeController?.packageName?.startsWith(pkg) == true || pkg.startsWith(activeController?.packageName ?: ""))) {
                     if (artist.contains(" - ") || artist.contains(" -- ")) {
                         val pts = artist.split(" - ", " -- ")
                         if (pts.isNotEmpty()) artist = pts[0]
@@ -198,8 +219,11 @@ class JiuYiMediaService : NotificationListenerService() {
 
     private fun bindNewController(controller: MediaController) {
         val preferredPkg = try { LauncherPrefs(this).preferredMusicPackage } catch (e: Exception) { "" }
-        if (preferredPkg.isNotEmpty() && controller.packageName != preferredPkg) {
-            return
+        if (preferredPkg.isNotEmpty()) {
+            val pkgMatches = controller.packageName == preferredPkg ||
+                    controller.packageName.startsWith(preferredPkg) ||
+                    preferredPkg.startsWith(controller.packageName)
+            if (!pkgMatches) return
         }
         if (activeController?.packageName == controller.packageName) {
             try { activeController?.unregisterCallback(controllerListener!!) } catch (e: Exception) {}
@@ -223,7 +247,12 @@ class JiuYiMediaService : NotificationListenerService() {
             val controllers = sessionManager?.getActiveSessions(component)
             if (!controllers.isNullOrEmpty()) {
                 val target = if (preferredPkg.isNotEmpty()) {
+                    // 先严格匹配，再前缀匹配（兼容网易云 .release 后缀）
                     controllers.firstOrNull { it.packageName == preferredPkg }
+                        ?: controllers.firstOrNull {
+                            it.packageName.startsWith(preferredPkg) ||
+                                    preferredPkg.startsWith(it.packageName)
+                        }
                 } else {
                     controllers.firstOrNull {
                         it.playbackState?.state == PlaybackState.STATE_PLAYING
@@ -284,7 +313,6 @@ class JiuYiMediaService : NotificationListenerService() {
                             controller.transportControls?.pause()
                             dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PAUSE)
                         } else {
-                            // Use KEYCODE_MEDIA_PLAY to make the action idempotent and prevent cancellation
                             dispatchKeyToController(controller, KeyEvent.KEYCODE_MEDIA_PLAY)
                             controller.transportControls?.play()
                         }

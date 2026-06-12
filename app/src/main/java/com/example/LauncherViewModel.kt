@@ -303,11 +303,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun updateMusicWidgetMode(mode: Int) { prefs.musicWidgetMode = mode; musicWidgetMode.value = mode }
-    fun updatePreferredMusicPackage(pkg: String) { 
+    fun updatePreferredMusicPackage(pkg: String) {
         prefs.preferredMusicPackage = pkg
-        preferredMusicPackage.value = pkg 
-        
-        // Reset music widget state to default immediately when switching player apps
+        preferredMusicPackage.value = pkg
+
         currentTrackName = "久以金曲"
         currentTrackArtist = "打开任意音乐播放器即可显示"
         isMusicPlaying = false
@@ -365,7 +364,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0)
             val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0)
 
-            // Try to send to service first
             val services = pm.queryIntentServices(mediaButtonIntent, 0)
             if (!services.isNullOrEmpty()) {
                 for (resolved in services) {
@@ -394,7 +392,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 }
             }
 
-            // Also try to send to receiver
             val receivers = pm.queryBroadcastReceivers(mediaButtonIntent, 0)
             if (!receivers.isNullOrEmpty()) {
                 for (resolved in receivers) {
@@ -422,7 +419,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun findAnyInstalledMusicPackage(): String {
         val context = getApplication<Application>()
         val pm = context.packageManager
-        
+
         try {
             val musicIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_APP_MUSIC)
@@ -456,7 +453,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     return p
                 } catch (e: Exception) {}
             }
-            
+
             for (info in packages) {
                 val name = info.packageName.lowercase()
                 if (name.contains("music") || name.contains("player") || name.contains("audio")) {
@@ -494,12 +491,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val pm = context.packageManager
             val mediaButtonIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
             mediaButtonIntent.setPackage(pkg)
-            
+
             val now = android.os.SystemClock.uptimeMillis()
             val keyDown = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
-            val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP,   android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
+            val keyUp = android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY, 0)
 
-            // Try to start registered services handling ACTION_MEDIA_BUTTON explicitly
             try {
                 val services = pm.queryIntentServices(mediaButtonIntent, 0)
                 if (!services.isNullOrEmpty()) {
@@ -561,7 +557,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val browserIntent = Intent("android.media.browse.MediaBrowserService")
         val services = pm.queryIntentServices(browserIntent, 0)
         val targetService = services.firstOrNull { it.serviceInfo.packageName == pkg }
-        
+
         if (targetService != null) {
             val componentName = android.content.ComponentName(
                 targetService.serviceInfo.packageName,
@@ -609,34 +605,29 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * 播放/暂停
-     *
-     * 逻辑说明：
-     * 1. 已经有活跃播放器 Session（无论在播放、暂停或后台挂起）：
-     *    由于已有有效会话，调用 sendMediaAction 直接控制，通过 TransportControls 精准操控。
-     * 2. 没有活跃 Session：
-     *    即“没有音乐在播放且暂无会话识别”时，先通过 connectAndPlayViaMediaBrowser 定向拉起播放器的 MediaBrowserService，
-     *    同时配合 wakeMusicAppBackground 发送 KEYCODE_MEDIA_PLAY 显式广播将其冷启动/后台唤醒。
-     *    唤醒同时申请 AudioFocus，接着开启 viewModelScope 协程延迟 800ms，等待该播放器实例化 MediaSession。
-     *    随后若已建立会话，直接调用精准控制，否则通用系统媒体键兜底触发播放。
-     */
+    // ── 播放/暂停（修复网易云 matchesPkg 前缀匹配 + 延迟提升至 1200ms）──────
     fun toggleMusicPlayback() {
         val targetPkg = preferredMusicPackage.value
         if (targetPkg.isNotEmpty()) {
-            val activePkg = JiuYiMediaService.getActiveSessionPkg()
-            if (JiuYiMediaService.isServiceRunning && activePkg == targetPkg) {
+            // 用前缀匹配代替严格等于，兼容网易云 com.netease.cloudmusic.release 等包名变体
+            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                 JiuYiMediaService.sendMediaAction("play_pause")
             } else {
                 connectAndPlayViaMediaBrowser(targetPkg)
                 wakeMusicAppBackground(targetPkg)
                 viewModelScope.launch {
-                    delay(800)
-                    if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+                    // 网易云启动较慢，延迟提升到 1200ms
+                    delay(1200)
+                    if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                         JiuYiMediaService.sendMediaAction("play_pause")
                     } else {
-                        val keyCode = if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE else android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+                        val keyCode = if (isMusicPlaying)
+                            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+                        else
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY
                         sendMediaKeyToPackage(targetPkg, keyCode)
+                        // 双重兜底：系统全局媒体键
+                        dispatchSystemMediaKey(keyCode)
                     }
                 }
             }
@@ -653,11 +644,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             connectAndPlayViaMediaBrowser(fallbackPkg)
             wakeMusicAppBackground(fallbackPkg)
             viewModelScope.launch {
-                delay(800)
+                delay(1200)
                 if (JiuYiMediaService.isServiceRunning) {
                     JiuYiMediaService.sendMediaAction("play_pause")
                 } else {
-                    dispatchSystemMediaKey(if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE else android.view.KeyEvent.KEYCODE_MEDIA_PLAY)
+                    dispatchSystemMediaKey(
+                        if (isMusicPlaying) android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+                        else android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+                    )
                 }
             }
         } else {
@@ -665,10 +659,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ── 下一曲（修复 matchesPkg 前缀匹配）────────────────────────────────────
     fun nextTrack() {
         val targetPkg = preferredMusicPackage.value
         if (targetPkg.isNotEmpty()) {
-            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                 JiuYiMediaService.sendMediaAction("next")
             } else {
                 sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
@@ -682,10 +677,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         dispatchSystemMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
     }
 
+    // ── 上一曲（修复 matchesPkg 前缀匹配）────────────────────────────────────
     fun prevTrack() {
         val targetPkg = preferredMusicPackage.value
         if (targetPkg.isNotEmpty()) {
-            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.getActiveSessionPkg() == targetPkg) {
+            if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                 JiuYiMediaService.sendMediaAction("prev")
             } else {
                 sendMediaKeyToPackage(targetPkg, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
