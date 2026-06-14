@@ -536,6 +536,7 @@ fun AddManagementScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.SpaceBetween
                                     ) {
+                                        val realAppsCount = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
                                         Text(
                                             text = if (idx == 0) "主屏幕 1" else "主屏幕 ${idx + 1}",
                                             color = Color.White,
@@ -556,11 +557,12 @@ fun AddManagementScreen(
                                                 Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
                                                 Text(text = "${page.widgets.size}", color = Color.Gray, fontSize = 8.sp)
                                             }
-                                            if (page.apps.isNotEmpty()) {
+
+                                            if (realAppsCount > 0) {
                                                 Icon(imageVector = Icons.Default.Apps, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
-                                                Text(text = "${page.apps.size}", color = Color.Gray, fontSize = 8.sp)
+                                                Text(text = "$realAppsCount", color = Color.Gray, fontSize = 8.sp)
                                             }
-                                            if (idx > 0 && page.apps.isEmpty() && page.widgets.isEmpty()) {
+                                            if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
                                                 Text(text = "空白页", color = Color.Gray, fontSize = 8.sp)
                                             }
                                         }
@@ -587,7 +589,7 @@ fun AddManagementScreen(
                                             }
                                             
                                             // Delete Page if blank (except main first page)
-                                            if (idx > 0 && page.apps.isEmpty() && page.widgets.isEmpty()) {
+                                            if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
                                                     contentDescription = "删除",

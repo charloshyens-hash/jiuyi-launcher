@@ -443,15 +443,16 @@ fun LauncherAppDrawer(
                                             if (idx == 0) {
                                                 Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = if (isCurrentPage) Color.White else themeColor, modifier = Modifier.size(10.dp))
                                             }
+                                            val realAppsCount = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
                                             if (page.widgets.isNotEmpty()) {
                                                 Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(10.dp))
                                                 Text(text = "${page.widgets.size}", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp)
                                             }
-                                            if (page.apps.isNotEmpty()) {
+                                            if (realAppsCount > 0) {
                                                 Icon(imageVector = Icons.Default.Apps, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(10.dp))
-                                                Text(text = "${page.apps.size}", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp)
+                                                Text(text = "$realAppsCount", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp)
                                             }
-                                            if (idx > 0 && page.apps.isEmpty() && page.widgets.isEmpty()) {
+                                            if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
                                                 Text(text = "空白页", color = Color.White.copy(alpha = 0.65f), fontSize = 8.sp)
                                             }
                                         }

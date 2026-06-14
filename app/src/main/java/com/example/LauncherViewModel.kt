@@ -708,6 +708,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     var dragSourceIndex by mutableStateOf(-1)
 
     var drawerItemBounds by mutableStateOf<Map<Int, RectBounds>>(emptyMap())
+    var homeGridBounds by mutableStateOf<Map<Int, RectBounds>>(emptyMap())
     val drawerPackageOrder = MutableStateFlow<List<String>>(emptyList())
     val preUninstallApp = MutableStateFlow<AppModel?>(null)
     var isEditingHomeScreen by mutableStateOf(false)
@@ -1051,7 +1052,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun loadHomePages() {
         val raw = prefs.homePagesRaw
         if (raw.isEmpty()) {
-            val defaultPage = HomeScreenPage("0", apps = emptyList(), widgets = listOf("RAM Booster", "Music Cassette"))
+            val defaultPage = HomeScreenPage("0", apps = List(24) { "EMPTY" }, widgets = listOf("RAM Booster", "Music Cassette"))
             homePages.value = listOf(defaultPage)
         } else {
             val parts = raw.split("|||")
@@ -1061,19 +1062,33 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 var widgets = emptyList<String>()
                 for (sub in subParts) {
                     if (sub.startsWith("apps:")) {
-                        apps = sub.substring(5).split(",").filter { it.isNotEmpty() }
+                        apps = sub.substring(5).split(",")
                     } else if (sub.startsWith("widgets:")) {
                         widgets = sub.substring(8).split(",").filter { it.isNotEmpty() }
                     }
                 }
-                HomeScreenPage(index.toString(), apps, widgets)
+                val mutableApps = apps.toMutableList()
+                while (mutableApps.size < 24) {
+                    mutableApps.add("EMPTY")
+                }
+                if (mutableApps.size > 24) {
+                    mutableApps.subList(24, mutableApps.size).clear()
+                }
+                HomeScreenPage(index.toString(), mutableApps, widgets)
             }
         }
     }
 
     fun saveHomePages(pages: List<HomeScreenPage>) {
         val serialized = pages.joinToString("|||") { page ->
-            "apps:${page.apps.joinToString(",")}" + ":::" + "widgets:${page.widgets.joinToString(",")}"
+            val normalizedApps = page.apps.toMutableList()
+            while (normalizedApps.size < 24) {
+                normalizedApps.add("EMPTY")
+            }
+            if (normalizedApps.size > 24) {
+                normalizedApps.subList(24, normalizedApps.size).clear()
+            }
+            "apps:${normalizedApps.joinToString(",")}" + ":::" + "widgets:${page.widgets.joinToString(",")}"
         }
         prefs.homePagesRaw = serialized
         homePages.value = pages
@@ -1116,9 +1131,61 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val current = homePages.value.toMutableList()
         if (pageIndex in current.indices) {
             val page = current[pageIndex]
-            if (!page.apps.contains(packageName)) {
-                val updatedApps = page.apps + packageName
-                current[pageIndex] = page.copy(apps = updatedApps)
+            val pageApps = page.apps.toMutableList()
+            while (pageApps.size < 24) { pageApps.add("EMPTY") }
+            if (!pageApps.contains(packageName)) {
+                val emptyIdx = pageApps.indexOf("EMPTY")
+                if (emptyIdx != -1) {
+                    pageApps[emptyIdx] = packageName
+                } else {
+                    pageApps.add(packageName) // fallback if full
+                }
+                current[pageIndex] = page.copy(apps = pageApps)
+                saveHomePages(current)
+            }
+        }
+    }
+
+    fun addAppToPageAtSlot(pageIndex: Int, packageName: String, slotIndex: Int) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            val pageApps = page.apps.toMutableList()
+            while (pageApps.size < 24) { pageApps.add("EMPTY") }
+            if (slotIndex in pageApps.indices) {
+                // If it is already placed elsewhere on the page, clear it first
+                val existingIdx = pageApps.indexOf(packageName)
+                if (existingIdx != -1) {
+                    pageApps[existingIdx] = "EMPTY"
+                }
+                
+                val oldApp = pageApps[slotIndex]
+                pageApps[slotIndex] = packageName
+                
+                // If the target slot was occupied, bump the old app to the first available empty slot
+                if (oldApp != "EMPTY" && oldApp != packageName) {
+                    val emptyIdx = pageApps.indexOf("EMPTY")
+                    if (emptyIdx != -1) {
+                        pageApps[emptyIdx] = oldApp
+                    }
+                }
+                current[pageIndex] = page.copy(apps = pageApps)
+                saveHomePages(current)
+            }
+        }
+    }
+
+    fun moveAppInPage(pageIndex: Int, fromSlotIndex: Int, toSlotIndex: Int) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            val pageApps = page.apps.toMutableList()
+            while (pageApps.size < 24) { pageApps.add("EMPTY") }
+            if (fromSlotIndex in pageApps.indices && toSlotIndex in pageApps.indices) {
+                val temp = pageApps[fromSlotIndex]
+                pageApps[fromSlotIndex] = pageApps[toSlotIndex]
+                pageApps[toSlotIndex] = temp
+                current[pageIndex] = page.copy(apps = pageApps)
                 saveHomePages(current)
             }
         }
@@ -1128,8 +1195,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val current = homePages.value.toMutableList()
         if (pageIndex in current.indices) {
             val page = current[pageIndex]
-            val updatedApps = page.apps - packageName
-            current[pageIndex] = page.copy(apps = updatedApps)
+            val pageApps = page.apps.map { if (it == packageName) "EMPTY" else it }
+            current[pageIndex] = page.copy(apps = pageApps)
             saveHomePages(current)
         }
     }
@@ -1164,7 +1231,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         val pages = homePages.value.map { page ->
-            val updated = page.apps.filter { it != packageName }
+            val updated = page.apps.map { if (it == packageName) "EMPTY" else it }
             page.copy(apps = updated)
         }
         saveHomePages(pages)

@@ -93,8 +93,6 @@ class MainActivity : ComponentActivity() {
         // Toast 反馈留在 Activity 侧（UI 层职责）
         if (success) {
             Toast.makeText(this, "卸载成功", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "已取消卸载", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -371,16 +369,60 @@ fun LauncherHomeScreen(
                         viewModel.updateDockConfiguration(currentDockList)
                         showToast("已调整 Dock 快捷排列")
                     } else {
-                        if (viewModel.isDraggingFromDock) {
-                            if (app.packageName == "MENU_BUTTON") {
-                                showToast("菜单按钮不能移除！")
-                            } else {
+                        var targetSlotIndex: Int? = null
+                        for ((cellIdx, rect) in viewModel.homeGridBounds) {
+                            if (dropX >= rect.left && dropX <= rect.right &&
+                                dropY >= rect.top && dropY <= rect.bottom
+                            ) {
+                                targetSlotIndex = cellIdx
+                                break
+                            }
+                        }
+                        if (targetSlotIndex == null) {
+                            var minDistance = Float.MAX_VALUE
+                            var closestIdx: Int? = null
+                            for ((cellIdx, rect) in viewModel.homeGridBounds) {
+                                val centerX = (rect.left + rect.right) / 2f
+                                val centerY = (rect.top + rect.bottom) / 2f
+                                val dist = (dropX - centerX) * (dropX - centerX) + (dropY - centerY) * (dropY - centerY)
+                                if (dist < minDistance) {
+                                    minDistance = dist
+                                    closestIdx = cellIdx
+                                }
+                            }
+                            if (minDistance < 25000f) {
+                                targetSlotIndex = closestIdx
+                            }
+                        }
+
+                        if (targetSlotIndex != null) {
+                            if (viewModel.isDraggingFromDock) {
                                 val currentDockList = dockPackages.toMutableList()
                                 if (viewModel.dragSourceIndex in currentDockList.indices) {
                                     currentDockList.removeAt(viewModel.dragSourceIndex)
                                 }
                                 viewModel.updateDockConfiguration(currentDockList)
-                                showToast("已从 Dock 移除: ${app.label}")
+                                viewModel.addAppToPageAtSlot(viewModel.activePageIndex.value, app.packageName, targetSlotIndex)
+                                showToast("已将 ${app.label} 移至桌面指定位置")
+                            } else {
+                                val activePageIdx = viewModel.activePageIndex.value
+                                if (viewModel.dragSourceIndex != -1) {
+                                    viewModel.moveAppInPage(activePageIdx, viewModel.dragSourceIndex, targetSlotIndex)
+                                    showToast("已调整 ${app.label} 的位置")
+                                }
+                            }
+                        } else {
+                            if (viewModel.isDraggingFromDock) {
+                                if (app.packageName == "MENU_BUTTON") {
+                                    showToast("菜单按钮不能移除！")
+                                } else {
+                                    val currentDockList = dockPackages.toMutableList()
+                                    if (viewModel.dragSourceIndex in currentDockList.indices) {
+                                        currentDockList.removeAt(viewModel.dragSourceIndex)
+                                    }
+                                    viewModel.updateDockConfiguration(currentDockList)
+                                    showToast("已从 Dock 移除: ${app.label}")
+                                }
                             }
                         }
                     }
@@ -593,100 +635,141 @@ fun LauncherHomeScreen(
                             }
                         }
 
-                        val pageApps = appList.filter { page.apps.contains(it.packageName) }
-                        if (pageApps.isNotEmpty()) {
-                            val chunkedApps = pageApps.chunked(4)
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                chunkedApps.forEach { rowApps ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        rowApps.forEach { app ->
-                                            var showShortCutMenu by remember { mutableStateOf(false) }
-                                            var itemScreenX by remember { mutableStateOf(0f) }
-                                            var itemScreenY by remember { mutableStateOf(0f) }
-                                            val density = androidx.compose.ui.platform.LocalDensity.current.density
+                        val pageAppsList = page.apps.toMutableList()
+                        while (pageAppsList.size < 24) {
+                            pageAppsList.add("EMPTY")
+                        }
+                        if (pageAppsList.size > 24) {
+                            pageAppsList.subList(24, pageAppsList.size).clear()
+                        }
 
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable { app.launch(context) }
-                                                    .onGloballyPositioned { bounds ->
-                                                        val coords = bounds.positionInWindow()
-                                                        itemScreenX = coords.x / density
-                                                        itemScreenY = coords.y / density
-                                                    }
-                                                    .pointerInput(app) {
-                                                        detectDragGesturesAfterLongPress(
-                                                            onDragStart = { localOffset ->
-                                                                viewModel.draggedApp = app
-                                                                viewModel.isDraggingActive = true
-                                                                viewModel.isDraggingFromDock = false
-                                                                viewModel.isDraggingFromDrawer = false
-                                                                viewModel.dragSourceIndex = -1
-                                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                                    x = itemScreenX + 26f,
-                                                                    y = itemScreenY + 26f
-                                                                )
-                                                                viewModel.dragDistance = -1f
-                                                                showShortCutMenu = true
-                                                                viewModel.isEditingHomeScreen = true
-                                                            },
-                                                            onDragEnd = {},
-                                                            onDragCancel = {},
-                                                            onDrag = { change, dragAmount ->
-                                                                change.consume()
-                                                                showShortCutMenu = false
-                                                            }
-                                                        )
-                                                    }
-                                            ) {
-                                                Column(
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    modifier = Modifier.fillMaxWidth()
+                        val chunkedIndices = (0 until 24).chunked(4)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            chunkedIndices.forEach { rowIndices ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    rowIndices.forEach { cellIdx ->
+                                        val pkg = pageAppsList[cellIdx]
+                                        val app = appList.firstOrNull { it.packageName == pkg }
+                                        val densityVal = androidx.compose.ui.platform.LocalDensity.current.density
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .onGloballyPositioned { bounds ->
+                                                    val coords = bounds.positionInWindow()
+                                                    val x = coords.x / densityVal
+                                                    val y = coords.y / densityVal
+                                                    val w = bounds.size.width / densityVal
+                                                    val h = bounds.size.height / densityVal
+                                                    viewModel.homeGridBounds = viewModel.homeGridBounds + (cellIdx to RectBounds(x, y, x + w, y + h))
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (app != null) {
+                                                var showShortCutMenu by remember { mutableStateOf(false) }
+                                                var itemScreenX by remember { mutableStateOf(0f) }
+                                                var itemScreenY by remember { mutableStateOf(0f) }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .onGloballyPositioned { bounds ->
+                                                            val coords = bounds.positionInWindow()
+                                                            itemScreenX = coords.x / densityVal
+                                                            itemScreenY = coords.y / densityVal
+                                                        }
+                                                        .clickable { app.launch(context) }
+                                                        .pointerInput(app) {
+                                                            detectDragGesturesAfterLongPress(
+                                                                onDragStart = { localOffset ->
+                                                                    viewModel.draggedApp = app
+                                                                    viewModel.isDraggingActive = true
+                                                                    viewModel.isDraggingFromDock = false
+                                                                    viewModel.isDraggingFromDrawer = false
+                                                                    viewModel.dragSourceIndex = cellIdx
+                                                                    viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                                        x = itemScreenX + 26f,
+                                                                        y = itemScreenY + 26f
+                                                                    )
+                                                                    viewModel.dragDistance = -1f
+                                                                    showShortCutMenu = true
+                                                                    viewModel.isEditingHomeScreen = true
+                                                                    viewModel.homeGridBounds = emptyMap()
+                                                                },
+                                                                onDragEnd = {},
+                                                                onDragCancel = {},
+                                                                onDrag = { change, dragAmount ->
+                                                                    change.consume()
+                                                                    showShortCutMenu = false
+                                                                }
+                                                            )
+                                                        }
                                                 ) {
-                                                    IconStylingCard(
-                                                        app = app,
-                                                        filter = iconPackFilter,
-                                                        themeColor = themeColor,
-                                                        modifier = Modifier.size(54.dp)
-                                                    )
-                                                    if (showLabels) {
-                                                        Spacer(modifier = Modifier.height(6.dp))
-                                                        Text(
-                                                            text = app.label,
-                                                            color = Color.White,
-                                                            fontSize = 11.sp,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            textAlign = TextAlign.Center
-                                                        )
-                                                    }
-                                                    DropdownMenu(
-                                                        expanded = showShortCutMenu && !viewModel.isDraggingActive,
-                                                        onDismissRequest = { showShortCutMenu = false }
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier.fillMaxWidth()
                                                     ) {
-                                                        DropdownMenuItem(
-                                                            text = { Text("从桌面页移除快捷方式") },
-                                                            onClick = {
-                                                                viewModel.removeAppFromPage(idx, app.packageName)
-                                                                showToast("已删除 ${app.label} 快捷方式")
-                                                                showShortCutMenu = false
-                                                            }
+                                                        IconStylingCard(
+                                                            app = app,
+                                                            filter = iconPackFilter,
+                                                            themeColor = themeColor,
+                                                            modifier = Modifier.size(54.dp)
                                                         )
+                                                        if (showLabels) {
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            Text(
+                                                                text = app.label,
+                                                                color = Color.White,
+                                                                fontSize = 11.sp,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                                textAlign = TextAlign.Center
+                                                            )
+                                                        }
+                                                        DropdownMenu(
+                                                            expanded = showShortCutMenu && !viewModel.isDraggingActive,
+                                                            onDismissRequest = { showShortCutMenu = false }
+                                                        ) {
+                                                            DropdownMenuItem(
+                                                                text = { Text("从桌面页移除快捷方式") },
+                                                                onClick = {
+                                                                    viewModel.removeAppFromPage(idx, app.packageName)
+                                                                    showToast("已删除 ${app.label} 快捷方式")
+                                                                    showShortCutMenu = false
+                                                                }
+                                                            )
+                                                        }
                                                     }
                                                 }
-                                            }
-                                        }
-                                        if (rowApps.size < 4) {
-                                            repeat(4 - rowApps.size) {
-                                                Spacer(modifier = Modifier.weight(1f))
+                                            } else {
+                                                if (viewModel.isEditingHomeScreen) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(54.dp)
+                                                            .border(
+                                                                width = 1.dp,
+                                                                color = Color.White.copy(alpha = 0.25f),
+                                                                shape = RoundedCornerShape(14.dp)
+                                                            ),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "+",
+                                                            color = Color.White.copy(alpha = 0.25f),
+                                                            fontSize = 14.sp
+                                                        )
+                                                    }
+                                                } else {
+                                                    Spacer(modifier = Modifier.size(54.dp))
+                                                }
                                             }
                                         }
                                     }
