@@ -69,8 +69,6 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: LauncherViewModel by viewModels()
 
-    // ── 卸载流程：用 ActivityResultLauncher 接收系统卸载界面结果 ────────────
-    // 记录当前正在等待卸载结果的包名
     private var pendingUninstallPackage: String? = null
 
     private val uninstallLauncher = registerForActivityResult(
@@ -79,18 +77,16 @@ class MainActivity : ComponentActivity() {
         val pkg = pendingUninstallPackage ?: return@registerForActivityResult
         pendingUninstallPackage = null
 
-        // 通过检查包是否还在系统中来判断卸载是否成功
         val success = try {
             packageManager.getPackageInfo(pkg, 0)
-            false // 包仍存在 → 用户取消或卸载失败
+            false
         } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-            true // 包已不存在 → 卸载成功
+            true
         }
 
-        // ── 方案 B：将结果统一交回 ViewModel 处理 ──────────────────────────
         viewModel.onUninstallResult(pkg, success)
 
-        // Toast 反馈留在 Activity 侧（UI 层职责）
+        // 只在真正卸载成功时提示，取消/失败时静默
         if (success) {
             Toast.makeText(this, "卸载成功", Toast.LENGTH_SHORT).show()
         }
@@ -99,14 +95,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Schedule periodic weather sync in background via WorkManager
         try {
             com.example.weather.WeatherSyncScheduler.scheduleWeatherSync(this)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to schedule weather sync: ${e.message}")
         }
 
-        // ── 拦截 ViewModel 发出的卸载请求，由 Activity 用 Launcher 处理 ──────
         lifecycleScope.launch {
             viewModel.uninstallRequestFlow
                 .collect { app ->
@@ -209,8 +203,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ── 以下 Composable 函数与仓库原文件完全一致，未作任何改动 ─────────────────
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LauncherHomeScreen(
@@ -219,7 +211,7 @@ fun LauncherHomeScreen(
 ) {
     val context = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    
+
     var isAppDrawerOpen by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isGesturePanelOpen by remember { mutableStateOf(false) }
@@ -231,9 +223,12 @@ fun LauncherHomeScreen(
     val appList by viewModel.appList.collectAsState()
     val showLabels by viewModel.showLabels.collectAsState()
     val iconPackFilter by viewModel.iconPackFilter.collectAsState()
-    
+
     val homePages by viewModel.homePages.collectAsState()
     val activePageIndex by viewModel.activePageIndex.collectAsState()
+
+    // ── 记录拖拽开始时的源页索引，用于跨页拖拽判断 ──────────────────────
+    var dragSourcePageIndex by remember { mutableStateOf(0) }
 
     val appDrawerOffset by animateDpAsState(
         targetValue = if (isAppDrawerOpen) 0.dp else 1200.dp,
@@ -337,7 +332,7 @@ fun LauncherHomeScreen(
 
                     if (isOverDockZone) {
                         val currentDockList = dockPackages.toMutableList()
-                        
+
                         if (viewModel.isDraggingFromDock && viewModel.dragSourceIndex in currentDockList.indices) {
                             currentDockList.removeAt(viewModel.dragSourceIndex)
                         } else {
@@ -345,7 +340,7 @@ fun LauncherHomeScreen(
                                 viewModel.removeAppFromPage(viewModel.activePageIndex.value, app.packageName)
                             }
                         }
-                        
+
                         val itemsCount = currentDockList.size
                         val dockMaxWidth = 500f
                         val dockActualWidthDp = screenWidth.coerceAtMost(dockMaxWidth.toInt()) - 24f
@@ -358,17 +353,18 @@ fun LauncherHomeScreen(
                         } else {
                             0
                         }
-                        
+
                         if (app.packageName == "MENU_BUTTON") {
                             currentDockList.add(targetIndex, "MENU_BUTTON")
                         } else {
                             currentDockList.removeAll { it == app.packageName }
                             currentDockList.add(targetIndex, app.packageName)
                         }
-                        
+
                         viewModel.updateDockConfiguration(currentDockList)
                         showToast("已调整 Dock 快捷排列")
                     } else {
+                        // ── 主屏幕放置逻辑（含跨页拖拽）──────────────────────────────
                         var targetSlotIndex: Int? = null
                         for ((cellIdx, rect) in viewModel.homeGridBounds) {
                             if (dropX >= rect.left && dropX <= rect.right &&
@@ -395,23 +391,35 @@ fun LauncherHomeScreen(
                             }
                         }
 
+                        val currentActivePageIdx = viewModel.activePageIndex.value
+                        // ── [改动2] 判断是否发生了跨页：当前激活页 ≠ 拖拽开始时的源页 ──
+                        val isCrossPage = !viewModel.isDraggingFromDock &&
+                                currentActivePageIdx != dragSourcePageIndex
+
                         if (targetSlotIndex != null) {
                             if (viewModel.isDraggingFromDock) {
+                                // Dock → 主屏某 slot（不涉及跨页）
                                 val currentDockList = dockPackages.toMutableList()
                                 if (viewModel.dragSourceIndex in currentDockList.indices) {
                                     currentDockList.removeAt(viewModel.dragSourceIndex)
                                 }
                                 viewModel.updateDockConfiguration(currentDockList)
-                                viewModel.addAppToPageAtSlot(viewModel.activePageIndex.value, app.packageName, targetSlotIndex)
+                                viewModel.addAppToPageAtSlot(currentActivePageIdx, app.packageName, targetSlotIndex)
                                 showToast("已将 ${app.label} 移至桌面指定位置")
+                            } else if (isCrossPage) {
+                                // 跨页拖拽：从源页移除，放到目标页的指定 slot
+                                viewModel.removeAppFromPage(dragSourcePageIndex, app.packageName)
+                                viewModel.addAppToPageAtSlot(currentActivePageIdx, app.packageName, targetSlotIndex)
+                                showToast("已将 ${app.label} 移至第 ${currentActivePageIdx + 1} 页")
                             } else {
-                                val activePageIdx = viewModel.activePageIndex.value
+                                // 同页内自由位置移动（原有逻辑）
                                 if (viewModel.dragSourceIndex != -1) {
-                                    viewModel.moveAppInPage(activePageIdx, viewModel.dragSourceIndex, targetSlotIndex)
+                                    viewModel.moveAppInPage(currentActivePageIdx, viewModel.dragSourceIndex, targetSlotIndex)
                                     showToast("已调整 ${app.label} 的位置")
                                 }
                             }
                         } else {
+                            // 没有命中任何 slot
                             if (viewModel.isDraggingFromDock) {
                                 if (app.packageName == "MENU_BUTTON") {
                                     showToast("菜单按钮不能移除！")
@@ -423,13 +431,18 @@ fun LauncherHomeScreen(
                                     viewModel.updateDockConfiguration(currentDockList)
                                     showToast("已从 Dock 移除: ${app.label}")
                                 }
+                            } else if (isCrossPage) {
+                                // 跨页但没有 slot：追加到目标页末尾
+                                viewModel.removeAppFromPage(dragSourcePageIndex, app.packageName)
+                                viewModel.addAppToPage(currentActivePageIdx, app.packageName)
+                                showToast("已将 ${app.label} 移至第 ${currentActivePageIdx + 1} 页")
                             }
                         }
                     }
                 }
             }
         }
-        
+
         viewModel.draggedApp = null
         viewModel.isDraggingActive = false
         viewModel.isDraggingFromDock = false
@@ -523,19 +536,23 @@ fun LauncherHomeScreen(
                 }
             }
     ) {
-        
+
         LauncherBackground(wallpaperName = wallpaperName)
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // ── [改动1-a] 长按触发手势面板：拖拽中不触发 ──────────────────
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = {
-                            isGesturePanelOpen = true
+                            if (!viewModel.isDraggingActive) {
+                                isGesturePanelOpen = true
+                            }
                         }
                     )
                 }
+                // ── [改动1-b] 上滑触发手势面板：拖拽中不触发 ──────────────────
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -546,7 +563,7 @@ fun LauncherHomeScreen(
                             val pointerChange = event.changes.firstOrNull()
                             if (pointerChange != null) {
                                 val dragY = pointerChange.position.y - startY
-                                if (dragY < -60f && !isTriggered) {
+                                if (dragY < -60f && !isTriggered && !viewModel.isDraggingActive) {
                                     isGesturePanelOpen = true
                                     isTriggered = true
                                     pointerChange.consume()
@@ -703,6 +720,8 @@ fun LauncherHomeScreen(
                                                                     showShortCutMenu = true
                                                                     viewModel.isEditingHomeScreen = true
                                                                     viewModel.homeGridBounds = emptyMap()
+                                                                    // ── [改动2] 记录拖拽开始时的页索引 ──
+                                                                    dragSourcePageIndex = idx
                                                                 },
                                                                 onDragEnd = {},
                                                                 onDragCancel = {},
@@ -958,7 +977,7 @@ fun LauncherHomeScreen(
                                 .height(4.dp)
                                 .background(Color.White.copy(alpha = 0.3f), shape = CircleShape)
                         )
-                        
+
                         Spacer(modifier = Modifier.height(18.dp))
 
                         Text(
