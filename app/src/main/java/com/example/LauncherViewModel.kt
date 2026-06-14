@@ -1183,32 +1183,29 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun uninstallApp(context: android.content.Context, app: AppModel) {
         val packageName = app.packageName
 
-        // 检查是否是虚拟预览应用（实际上不存在于系统中）
+        // 虚拟应用：仅本地移除
         val isInstalled = try {
             context.packageManager.getPackageInfo(packageName, 0)
             true
-        } catch (_: Exception) {
-            false
-        }
+        } catch (_: Exception) { false }
 
         if (!isInstalled) {
-            // 虚拟应用：仅本地移除
             removeAppFromEverywhereLocal(packageName)
             android.widget.Toast.makeText(context, "已成功卸载虚拟应用: ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
-        // 检查是否是系统应用
+        // 系统应用检测：FLAG_SYSTEM 且没有 FLAG_UPDATED_SYSTEM_APP（更新过的系统应用允许卸载更新）
         try {
             val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
-            if (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0) {
+            val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            val isUpdated = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            if (isSystem && !isUpdated) {
                 android.widget.Toast.makeText(context, "系统应用无法卸载：${app.label}", android.widget.Toast.LENGTH_SHORT).show()
                 return
             }
-        } catch (e: Exception) {}
+        } catch (_: Exception) { /* 查询失败则继续尝试卸载 */ }
 
-        // 真实应用：通过 StateFlow 通知 MainActivity 使用 ActivityResultLauncher 发起卸载
-        // 这样才能在用户确认卸载后收到回调，正确刷新列表
         _uninstallRequestFlow.tryEmit(app)
     }
 

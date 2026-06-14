@@ -111,11 +111,12 @@ class MainActivity : ComponentActivity() {
         // ── 拦截 ViewModel 发出的卸载请求，由 Activity 用 Launcher 处理 ──────
         lifecycleScope.launch {
             viewModel.uninstallRequestFlow
-                .filterNotNull()
                 .collect { app ->
                     pendingUninstallPackage = app.packageName
-                    val intent = Intent(Intent.ACTION_DELETE).apply {
+                    val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
                         data = android.net.Uri.parse("package:${app.packageName}")
+                        putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     try {
                         uninstallLauncher.launch(intent)
