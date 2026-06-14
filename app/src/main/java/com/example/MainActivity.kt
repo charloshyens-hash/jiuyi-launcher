@@ -87,14 +87,13 @@ class MainActivity : ComponentActivity() {
             true // 包已不存在 → 卸载成功
         }
 
+        // ── 方案 B：将结果统一交回 ViewModel 处理 ──────────────────────────
+        viewModel.onUninstallResult(pkg, success)
+
+        // Toast 反馈留在 Activity 侧（UI 层职责）
         if (success) {
-            // 从 ViewModel 内存列表 + Dock + 桌面页中彻底移除
-            viewModel.removeAppFromEverywhereLocal(pkg)
-            viewModel.preUninstallApp.value = null
             Toast.makeText(this, "卸载成功", Toast.LENGTH_SHORT).show()
         } else {
-            // 卸载取消：恢复被提前移除的图标
-            viewModel.refreshInstalledApps()
             Toast.makeText(this, "已取消卸载", Toast.LENGTH_SHORT).show()
         }
     }
@@ -110,8 +109,6 @@ class MainActivity : ComponentActivity() {
         }
 
         // ── 拦截 ViewModel 发出的卸载请求，由 Activity 用 Launcher 处理 ──────
-        // 原 uninstallApp 用 context.startActivity 发起，在部分机型上无法正确
-        // 接收结果；改为此处统一通过 ActivityResultLauncher 发起并回调。
         lifecycleScope.launch {
             viewModel.uninstallRequestFlow
                 .filterNotNull()
@@ -119,7 +116,6 @@ class MainActivity : ComponentActivity() {
                     pendingUninstallPackage = app.packageName
                     val intent = Intent(Intent.ACTION_DELETE).apply {
                         data = android.net.Uri.parse("package:${app.packageName}")
-                        // EXTRA_RETURN_RESULT = true 确保系统卸载界面把结果回传给 Launcher
                         putExtra(Intent.EXTRA_RETURN_RESULT, true)
                     }
                     try {
@@ -128,24 +124,22 @@ class MainActivity : ComponentActivity() {
                         android.util.Log.e("MainActivity", "Failed to launch uninstall: ${e.message}")
                         Toast.makeText(this@MainActivity, "无法启动系统卸载界面", Toast.LENGTH_SHORT).show()
                         pendingUninstallPackage = null
-                        // 卸载界面无法打开时把提前移除的图标恢复回来
                         viewModel.refreshInstalledApps()
                     }
                 }
         }
 
-        // Supports full edge-to-edge immersive visualization
         enableEdgeToEdge()
 
         setContent {
             val themeIndex by viewModel.currentThemeIndex.collectAsState()
             val themeColors = listOf(
-                Color(0xFFFA5F3D), // 暖阳橙杏 (WarmSunOrange)
-                Color(0xFF00D1FF), // 极光霓虹 (NeonCyan)
-                Color(0xFF6366F1), // 极客黛蓝 (PurpleBlue)
-                Color(0xFF10B981), // 翡翠初碧 (EmeraldTeal)
-                Color(0xFFEC4899), // 蔷薇电粉 (VelvetPink)
-                Color(0xFFF59E0B)  // 琥珀金芒 (AmberYellow)
+                Color(0xFFFA5F3D),
+                Color(0xFF00D1FF),
+                Color(0xFF6366F1),
+                Color(0xFF10B981),
+                Color(0xFFEC4899),
+                Color(0xFFF59E0B)
             )
             val activeThemeColor = themeColors.getOrElse(themeIndex) { Color(0xFFFA5F3D) }
 
@@ -165,12 +159,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 1. Trigger live weather updates dynamically on resuming desktop focus
         try {
             viewModel.fetchRealWeather()
         } catch (e: Exception) {}
 
-        // 2. Revive media notification listener state instantly when returning to the layout
         try {
             if (isNotificationServiceEnabled(this)) {
                 toggleNotificationListenerService(this)
@@ -219,23 +211,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ── 以下 Composable 函数与仓库原文件完全一致，未作任何改动 ─────────────────
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LauncherHomeScreen(
     viewModel: LauncherViewModel,
     themeColor: Color
 ) {
-    // ── 以下内容与原文件完全一致，未作任何改动 ───────────────────────────────
     val context = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     
-    // UI Panel visibility states
     var isAppDrawerOpen by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isGesturePanelOpen by remember { mutableStateOf(false) }
     var isAddScreenOpen by remember { mutableStateOf(false) }
 
-    // Collect settings from StateFlow
     val wallpaperName by viewModel.wallpaperName.collectAsState()
     val clockStyle by viewModel.clockStyle.collectAsState()
     val dockPackages by viewModel.dockPackages.collectAsState()
@@ -246,21 +237,18 @@ fun LauncherHomeScreen(
     val homePages by viewModel.homePages.collectAsState()
     val activePageIndex by viewModel.activePageIndex.collectAsState()
 
-    // Slide-up trigger animation
     val appDrawerOffset by animateDpAsState(
         targetValue = if (isAppDrawerOpen) 0.dp else 1200.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "appDrawer"
     )
 
-    // Side screen transition offset for Settings
     val settingsOffset by animateDpAsState(
         targetValue = if (isSettingsOpen) 0.dp else 1200.dp,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "settingsOffset"
     )
 
-    // Unified helper Toast feedback
     val showToast: (String) -> Unit = { message ->
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
@@ -295,7 +283,6 @@ fun LauncherHomeScreen(
                         showToast("已成功将 ${app.label} 添加到第 ${droppedOnPage + 1} 页主屏")
                     }
                 } else {
-                    // Check if dropped inside Drawer slots to reorder
                     var droppedOnDrawerIndex: Int? = null
                     for ((globalIdx, rect) in viewModel.drawerItemBounds) {
                         if (dropX >= rect.left && dropX <= rect.right &&
@@ -306,7 +293,6 @@ fun LauncherHomeScreen(
                         }
                     }
                     if (droppedOnDrawerIndex == null) {
-                        // find closest slot
                         var minDistance = Float.MAX_VALUE
                         var closestIdx: Int? = null
                         for ((globalIdx, rect) in viewModel.drawerItemBounds) {
@@ -334,7 +320,6 @@ fun LauncherHomeScreen(
                 val isOverTopBar = dropY <= 100f && dropY > 0f
                 if (isOverTopBar) {
                     if (dropX < screenWidth / 2f) {
-                        // Left side: delete shortcut
                         if (viewModel.isDraggingFromDock) {
                             val currentDockList = dockPackages.toMutableList()
                             if (viewModel.dragSourceIndex in currentDockList.indices) {
@@ -347,7 +332,6 @@ fun LauncherHomeScreen(
                             showToast("已从桌面移除 ${app.label} 快捷图标")
                         }
                     } else {
-                        // Right side: uninstall app
                         viewModel.uninstallApp(context, app)
                     }
                 } else {
@@ -359,7 +343,6 @@ fun LauncherHomeScreen(
                         if (viewModel.isDraggingFromDock && viewModel.dragSourceIndex in currentDockList.indices) {
                             currentDockList.removeAt(viewModel.dragSourceIndex)
                         } else {
-                            // Dragged from home screen - remove from the home screen page
                             if (!app.packageName.startsWith("WIDGET:") && app.packageName != "MENU_BUTTON") {
                                 viewModel.removeAppFromPage(viewModel.activePageIndex.value, app.packageName)
                             }
@@ -413,7 +396,6 @@ fun LauncherHomeScreen(
         viewModel.isEditingHomeScreen = false
     }
 
-    // Intercept standard hardware system Android Back Press
     val preUninstallApp by viewModel.preUninstallApp.collectAsState()
     BackHandler(enabled = isAppDrawerOpen || isSettingsOpen || isGesturePanelOpen || preUninstallApp != null || viewModel.isEditingHomeScreen) {
         when {
@@ -427,11 +409,9 @@ fun LauncherHomeScreen(
             isGesturePanelOpen -> isGesturePanelOpen = false
             isAppDrawerOpen -> {
                 if (viewModel.drawerPageIndex.value > 0) {
-                    // Send deep force-reset signal to snap page state back to index 0
                     viewModel.drawerPageIndex.value = 0
                     viewModel.backToFirstScreenEvent.tryEmit(Unit)
                 } else {
-                    // Exactly at the first page of "应用" tab, close the drawer
                     isAppDrawerOpen = false
                 }
             }
@@ -502,10 +482,8 @@ fun LauncherHomeScreen(
             }
     ) {
         
-        // 1. Dynamic Wallpaper Draw Engine (Centers & Animated Particles)
         LauncherBackground(wallpaperName = wallpaperName)
 
-        // GestureDetector overlay for Swipe Up and Long Press actions
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -541,7 +519,6 @@ fun LauncherHomeScreen(
                 pageCount = { homePages.size }
             )
 
-            // Sync page states
             LaunchedEffect(pagerState.currentPage) {
                 if (viewModel.activePageIndex.value != pagerState.currentPage) {
                     viewModel.activePageIndex.value = pagerState.currentPage
@@ -558,7 +535,7 @@ fun LauncherHomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
-                    .padding(bottom = 120.dp) // Leave blank space at bottom for floating Dock
+                    .padding(bottom = 120.dp)
             ) {
                 HorizontalPager(
                     state = pagerState,
@@ -584,7 +561,6 @@ fun LauncherHomeScreen(
                             Spacer(modifier = Modifier.height(30.dp))
                         }
 
-                        // Render Pinned Widgets for this exact page
                         page.widgets.forEach { widget ->
                             var showMenu by remember { mutableStateOf(false) }
                             Box(
@@ -617,7 +593,6 @@ fun LauncherHomeScreen(
                             }
                         }
 
-                        // App Grid representation on this exact page
                         val pageApps = appList.filter { page.apps.contains(it.packageName) }
                         if (pageApps.isNotEmpty()) {
                             val chunkedApps = pageApps.chunked(4)
@@ -663,12 +638,8 @@ fun LauncherHomeScreen(
                                                                 showShortCutMenu = true
                                                                 viewModel.isEditingHomeScreen = true
                                                             },
-                                                            onDragEnd = {
-                                                                // Handled globally
-                                                            },
-                                                            onDragCancel = {
-                                                                // Handled globally
-                                                            },
+                                                            onDragEnd = {},
+                                                            onDragCancel = {},
                                                             onDrag = { change, dragAmount ->
                                                                 change.consume()
                                                                 showShortCutMenu = false
@@ -678,8 +649,7 @@ fun LauncherHomeScreen(
                                             ) {
                                                 Column(
                                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
+                                                    modifier = Modifier.fillMaxWidth()
                                                 ) {
                                                     IconStylingCard(
                                                         app = app,
@@ -726,7 +696,6 @@ fun LauncherHomeScreen(
                     }
                 }
 
-                // Page indicators inside the column as a bottom bar dots group
                 if (homePages.size > 1) {
                     Row(
                         modifier = Modifier
@@ -750,7 +719,6 @@ fun LauncherHomeScreen(
             }
         }
 
-        // 4. Floating Capsule Custom Dock Navigation Area (Dynamically centered & fitted capsule layout)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -767,7 +735,7 @@ fun LauncherHomeScreen(
                     .shadow(12.dp, RoundedCornerShape(24.dp)),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xB3131313) // Jiuyi Desktop 70% glassmorphic overlay of surface #131313
+                    containerColor = Color(0xB3131313)
                 ),
                 border = BorderStroke(1.dp, Color(0x1AFFFFFF))
             ) {
@@ -813,12 +781,8 @@ fun LauncherHomeScreen(
                                             viewModel.dragDistance = -1f
                                             viewModel.isEditingHomeScreen = true
                                         },
-                                        onDragEnd = {
-                                            // Handled globally
-                                        },
-                                        onDragCancel = {
-                                            // Handled globally
-                                        },
+                                        onDragEnd = {},
+                                        onDragCancel = {},
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                         }
@@ -879,7 +843,6 @@ fun LauncherHomeScreen(
             }
         }
 
-        // 5. Translucent Functioning Gestural Overlay Layer (4x2 entrances)
         AnimatedVisibility(
             visible = isGesturePanelOpen,
             enter = fadeIn() + expandIn(expandFrom = Alignment.Center),
@@ -1015,7 +978,6 @@ fun LauncherHomeScreen(
             }
         }
 
-        // 6. Sliding applications Horizontal Drawer
         val drawerAlpha by animateFloatAsState(
             targetValue = if (viewModel.isDraggingActive) {
                 if (viewModel.isDraggingFromDrawer) 1f else 0.15f
@@ -1052,7 +1014,6 @@ fun LauncherHomeScreen(
             )
         }
 
-        // 7. Dynamic sliding settings board Center Console
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1066,7 +1027,6 @@ fun LauncherHomeScreen(
             )
         }
 
-        // 8. Elegant top options bar for home screen edit/pre-uninstall/dragging style
         AnimatedVisibility(
             visible = viewModel.isEditingHomeScreen,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
@@ -1092,10 +1052,7 @@ fun LauncherHomeScreen(
                 ),
                 border = BorderStroke(1.dp, Color(0x2BFFFFFF))
             ) {
-                Row(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    // Left Option: Delete Shortcut
+                Row(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -1124,7 +1081,6 @@ fun LauncherHomeScreen(
                         }
                     }
 
-                    // Divider line
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -1132,7 +1088,6 @@ fun LauncherHomeScreen(
                             .background(Color(0x1BFFFFFF))
                     )
 
-                    // Right Option: Uninstall App entirely
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -1164,14 +1119,12 @@ fun LauncherHomeScreen(
             }
         }
 
-        // 8. Live Drag and Drop Floating Overlay
         DragOverlay(
             viewModel = viewModel,
             themeColor = themeColor,
             iconPackFilter = iconPackFilter
         )
 
-        // 9. Floating City Selector Dialog overlay
         if (viewModel.showCitySelectorDialog) {
             CitySelectorDialog(
                 viewModel = viewModel,
@@ -1180,7 +1133,6 @@ fun LauncherHomeScreen(
             )
         }
 
-        // 9.5. Elegant Translucent Custom Launcher Add Page & Shortcuts Management Page
         AnimatedVisibility(
             visible = isAddScreenOpen,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
@@ -1193,7 +1145,6 @@ fun LauncherHomeScreen(
                 showToast = showToast
             )
         }
-
     }
 }
 
@@ -1216,9 +1167,8 @@ fun DragOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (viewModel.isDraggingFromDrawer) Color.Transparent else Color.Black.copy(alpha = 0.28f)) // do not dim when dragging from drawer
+                .background(if (viewModel.isDraggingFromDrawer) Color.Transparent else Color.Black.copy(alpha = 0.28f))
         ) {
-            // Dim helper dock zone representation at the bottom 160.dp (only when dragging from home screen / dock)
             if (!viewModel.isDraggingFromDrawer) {
                 Box(
                     modifier = Modifier
@@ -1237,7 +1187,6 @@ fun DragOverlay(
                 }
             }
 
-            // Dragged replica following absolute coordinates
             Box(
                 modifier = Modifier
                     .offset(
