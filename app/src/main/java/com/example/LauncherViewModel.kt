@@ -30,6 +30,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val prefs = LauncherPrefs(application)
     val weatherRepo = WeatherRepository.getInstance(application)
 
+    val homePages = MutableStateFlow<List<HomeScreenPage>>(emptyList())
+    val activePageIndex = MutableStateFlow(0)
+
     private val _appList = MutableStateFlow<List<AppModel>>(emptyList())
     val appList: StateFlow<List<AppModel>> = _appList
 
@@ -700,22 +703,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     var draggedApp: AppModel? by mutableStateOf(null)
     var isDraggingActive by mutableStateOf(false)
     var dragOffset by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+    var dragDistance by mutableStateOf(0f)
     var isDraggingFromDock by mutableStateOf(false)
+    var isDraggingFromDrawer by mutableStateOf(false)
+    var drawerThumbnailBounds by mutableStateOf(emptyMap<Int, RectBounds>())
     var dragSourceIndex by mutableStateOf(-1)
+
+    var drawerItemBounds by mutableStateOf<Map<Int, RectBounds>>(emptyMap())
+    val drawerPackageOrder = MutableStateFlow<List<String>>(emptyList())
+    val preUninstallApp = MutableStateFlow<AppModel?>(null)
+    var isEditingHomeScreen by mutableStateOf(false)
 
     val hiddenPackagesFlow = MutableStateFlow<Set<String>>(prefs.hiddenPackages)
 
     val filteredApps: StateFlow<List<AppModel>> = combine(
-        _appList, searchQuery, hiddenPackagesFlow, showSystemApps
-    ) { apps, query, hidden, showSys ->
-        apps.filter { app ->
+        _appList, searchQuery, hiddenPackagesFlow, showSystemApps, drawerPackageOrder
+    ) { apps, query, hidden, showSys, order ->
+        val filtered = apps.filter { app ->
             val matchesSys = showSys || !app.isSystem
             val isNotHidden = !hidden.contains(app.packageName) || query.isNotEmpty()
             val matchesQuery = query.isEmpty() ||
                 app.label.contains(query, ignoreCase = true) ||
                 app.packageName.contains(query, ignoreCase = true)
             matchesSys && isNotHidden && matchesQuery
-        }.sortedBy { it.label.lowercase() }
+        }
+        filtered.sortedBy { app ->
+            val idx = order.indexOf(app.packageName)
+            if (idx != -1) idx else Int.MAX_VALUE
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -793,7 +808,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     init {
+        loadDrawerPackageOrder()
         loadDockConfiguration()
+        loadHomePages()
         refreshInstalledApps()
         updateRealtimeStats()
         trySyncSystemWeatherSilently()
@@ -806,7 +823,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_CHANGED); addDataScheme("package")
         }
-        androidx.core.content.ContextCompat.registerReceiver(application, packageReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        androidx.core.content.ContextCompat.registerReceiver(application, packageReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
         androidx.core.content.ContextCompat.registerReceiver(application, batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         androidx.core.content.ContextCompat.registerReceiver(application, mediaUpdateReceiver, IntentFilter("com.example.LAUNCHER_MEDIA_UPDATE"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         androidx.core.content.ContextCompat.registerReceiver(application, weatherUpdateReceiver, IntentFilter("com.example.LAUNCHER_WEATHER_UPDATE"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
@@ -820,10 +837,83 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         try { getApplication<Application>().unregisterReceiver(weatherUpdateReceiver) } catch (_: Exception) {}
     }
 
+    fun loadDrawerPackageOrder() {
+        val raw = prefs.drawerPackageOrderCSV
+        if (raw.isNotEmpty()) {
+            drawerPackageOrder.value = raw.split(",").filter { it.isNotEmpty() }
+        }
+    }
+
+    fun saveDrawerPackageOrder(newList: List<String>) {
+        val cleanList = newList.filter { it.isNotEmpty() }
+        prefs.drawerPackageOrderCSV = cleanList.joinToString(",")
+        drawerPackageOrder.value = cleanList
+    }
+
+    fun reorderDrawerApp(packageName: String, targetGlobalIndex: Int) {
+        val current = drawerPackageOrder.value.toMutableList()
+        val existingIndex = current.indexOf(packageName)
+        if (existingIndex != -1) {
+            current.removeAt(existingIndex)
+            val safeTarget = targetGlobalIndex.coerceIn(0, current.size)
+            current.add(safeTarget, packageName)
+            saveDrawerPackageOrder(current)
+        }
+    }
+
+    var lastDrawerPageSwitchTime = 0L
+    fun checkDrawerEdgeScroll(dropX: Float, screenWidth: Float, totalPages: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastDrawerPageSwitchTime < 1500) return
+        if (dropX < 32f) {
+            val current = drawerPageIndex.value
+            if (current > 0) {
+                lastDrawerPageSwitchTime = now
+                drawerPageIndex.value = current - 1
+            }
+        } else if (dropX > screenWidth - 32f) {
+            val current = drawerPageIndex.value
+            if (current < totalPages - 1) {
+                lastDrawerPageSwitchTime = now
+                drawerPageIndex.value = current + 1
+            }
+        }
+    }
+
+    var lastHomePageSwitchTime = 0L
+    fun checkHomeEdgeScroll(dropX: Float, screenWidth: Float, totalPages: Int) {
+        val now = System.currentTimeMillis()
+        if (now - lastHomePageSwitchTime < 1500) return
+        if (dropX < 32f) {
+            val current = activePageIndex.value
+            if (current > 0) {
+                lastHomePageSwitchTime = now
+                activePageIndex.value = current - 1
+            }
+        } else if (dropX > screenWidth - 32f) {
+            val current = activePageIndex.value
+            if (current < totalPages - 1) {
+                lastHomePageSwitchTime = now
+                activePageIndex.value = current + 1
+            }
+        }
+    }
+
     fun refreshInstalledApps() {
         viewModelScope.launch {
             val apps = withContext(Dispatchers.IO) { queryAppsFromSystem() }
             _appList.value = apps
+
+            // Sync drawer order
+            val currentOrder = drawerPackageOrder.value.toMutableList()
+            val installedPackages = apps.map { it.packageName }.toSet()
+            currentOrder.retainAll { installedPackages.contains(it) }
+            val existingPackages = currentOrder.toSet()
+            val newApps = apps.filter { !existingPackages.contains(it.packageName) }.sortedBy { it.label.lowercase() }
+            for (newApp in newApps) {
+                currentOrder.add(newApp.packageName)
+            }
+            saveDrawerPackageOrder(currentOrder)
         }
     }
 
@@ -951,6 +1041,174 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         searchJob = viewModelScope.launch {
             delay(350)
             _citySearchResults.value = weatherRepo.searchCityGeo(trimmed)
+        }
+    }
+
+    fun loadHomePages() {
+        val raw = prefs.homePagesRaw
+        if (raw.isEmpty()) {
+            val defaultPage = HomeScreenPage("0", apps = emptyList(), widgets = listOf("RAM Booster", "Music Cassette"))
+            homePages.value = listOf(defaultPage)
+        } else {
+            val parts = raw.split("|||")
+            homePages.value = parts.mapIndexed { index, part ->
+                val subParts = part.split(":::")
+                var apps = emptyList<String>()
+                var widgets = emptyList<String>()
+                for (sub in subParts) {
+                    if (sub.startsWith("apps:")) {
+                        apps = sub.substring(5).split(",").filter { it.isNotEmpty() }
+                    } else if (sub.startsWith("widgets:")) {
+                        widgets = sub.substring(8).split(",").filter { it.isNotEmpty() }
+                    }
+                }
+                HomeScreenPage(index.toString(), apps, widgets)
+            }
+        }
+    }
+
+    fun saveHomePages(pages: List<HomeScreenPage>) {
+        val serialized = pages.joinToString("|||") { page ->
+            "apps:${page.apps.joinToString(",")}" + ":::" + "widgets:${page.widgets.joinToString(",")}"
+        }
+        prefs.homePagesRaw = serialized
+        homePages.value = pages
+    }
+
+    fun addHomePage() {
+        val current = homePages.value.toMutableList()
+        val nextId = current.size.toString()
+        current.add(HomeScreenPage(nextId))
+        saveHomePages(current)
+    }
+
+    fun deleteHomePage(index: Int) {
+        val current = homePages.value.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            val reindexed = current.mapIndexed { reIndex, page ->
+                HomeScreenPage(reIndex.toString(), page.apps, page.widgets)
+            }
+            saveHomePages(reindexed)
+            if (activePageIndex.value >= reindexed.size) {
+                activePageIndex.value = maxOf(0, reindexed.size - 1)
+            }
+        }
+    }
+
+    fun reorderHomePage(fromIndex: Int, toIndex: Int) {
+        val current = homePages.value.toMutableList()
+        if (fromIndex in current.indices && toIndex in current.indices) {
+            val page = current.removeAt(fromIndex)
+            current.add(toIndex, page)
+            val reindexed = current.mapIndexed { reIndex, p ->
+                HomeScreenPage(reIndex.toString(), p.apps, p.widgets)
+            }
+            saveHomePages(reindexed)
+        }
+    }
+
+    fun addAppToPage(pageIndex: Int, packageName: String) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            if (!page.apps.contains(packageName)) {
+                val updatedApps = page.apps + packageName
+                current[pageIndex] = page.copy(apps = updatedApps)
+                saveHomePages(current)
+            }
+        }
+    }
+
+    fun removeAppFromPage(pageIndex: Int, packageName: String) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            val updatedApps = page.apps - packageName
+            current[pageIndex] = page.copy(apps = updatedApps)
+            saveHomePages(current)
+        }
+    }
+
+    fun addWidgetToPage(pageIndex: Int, widgetName: String) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            if (!page.widgets.contains(widgetName)) {
+                val updatedWidgets = page.widgets + widgetName
+                current[pageIndex] = page.copy(widgets = updatedWidgets)
+                saveHomePages(current)
+            }
+        }
+    }
+
+    fun removeWidgetFromPage(pageIndex: Int, widgetName: String) {
+        val current = homePages.value.toMutableList()
+        if (pageIndex in current.indices) {
+            val page = current[pageIndex]
+            val updatedWidgets = page.widgets - widgetName
+            current[pageIndex] = page.copy(widgets = updatedWidgets)
+            saveHomePages(current)
+        }
+    }
+
+    fun removeAppFromEverywhereLocal(packageName: String) {
+        // 1. Remove from dock
+        val dockList = dockPackages.value.toMutableList()
+        if (dockList.contains(packageName)) {
+            dockList.remove(packageName)
+            updateDockConfiguration(dockList)
+        }
+
+        // 2. Remove from all home screen pages
+        val pages = homePages.value.map { page ->
+            val updated = page.apps.filter { it != packageName }
+            page.copy(apps = updated)
+        }
+        saveHomePages(pages)
+
+        // 3. Remove from drawer order list
+        val drawerOrder = drawerPackageOrder.value.toMutableList()
+        if (drawerOrder.contains(packageName)) {
+            drawerOrder.remove(packageName)
+            saveDrawerPackageOrder(drawerOrder)
+        }
+
+        // 4. Force list updates to rebuild UI immediately
+        val remainingApps = _appList.value.filter { it.packageName != packageName }
+        _appList.value = remainingApps
+    }
+
+    fun uninstallApp(context: android.content.Context, app: AppModel) {
+        val packageName = app.packageName
+        
+        // Check if package is actually installed in system
+        val isInstalled = try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+
+        if (!isInstalled) {
+            // Simulated virtual preview app: remove locally
+            removeAppFromEverywhereLocal(packageName)
+            android.widget.Toast.makeText(context, "已成功卸载虚拟应用: ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            // Real application: launch system uninstaller intent
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_DELETE).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                android.widget.Toast.makeText(context, "正在请求系统卸载: ${app.label}...", android.widget.Toast.LENGTH_SHORT).show()
+                
+                // Refresh local UI state so the icon disappears immediately
+                removeAppFromEverywhereLocal(packageName)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "启动系统卸载失败: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

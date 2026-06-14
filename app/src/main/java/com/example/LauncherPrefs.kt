@@ -178,6 +178,14 @@ class LauncherPrefs(context: Context) {
         }
         set(value) = prefs.edit().putStringSet(KEY_HIDDEN_PACKAGES, value).apply()
 
+    var homePagesRaw: String
+        get() = prefs.getString("home_pages_raw_v1", "") ?: ""
+        set(value) = prefs.edit().putString("home_pages_raw_v1", value).apply()
+
+    var drawerPackageOrderCSV: String
+        get() = prefs.getString("drawer_package_order_csv", "") ?: ""
+        set(value) = prefs.edit().putString("drawer_package_order_csv", value).apply()
+
     fun toggleHiddenPackage(pkg: String) {
         val current = hiddenPackages.toMutableSet()
         if (current.contains(pkg)) {

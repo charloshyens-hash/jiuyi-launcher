@@ -1,8 +1,10 @@
 package com.example
 
+import android.content.Intent
 import android.content.Context
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -324,7 +326,9 @@ fun LauncherAppDrawer(
                 WidgetsDrawerGrid(
                     pinnedWidgets = pinnedWidgets,
                     onPinWidgetToggle = onPinWidgetToggle,
-                    themeColor = themeColor
+                    themeColor = themeColor,
+                    viewModel = viewModel,
+                    onDrop = onDrop
                 )
             } else {
                 // Last Page: 我的手机 (My Phone)
@@ -335,28 +339,193 @@ fun LauncherAppDrawer(
             }
         }
 
-        // 3. Multi-in-one unified navigation indicator dots at the bottom of the drawer (maps 1-to-1 to all pages)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        val density = LocalDensity.current.density
+        val isDraggingFromDrawer = viewModel.isDraggingActive && viewModel.isDraggingFromDrawer
+
+        AnimatedVisibility(
+            visible = isDraggingFromDrawer,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
-            repeat(totalDrawerPages) { index ->
-                val isSelected = pagerState.currentPage == index
-                Box(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0C0C0C)) // Contrast deep black bar below
+                    .padding(vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "拖动到缩略图以添加至对应主屏幕页 (小组件同理)",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                val homePages by viewModel.homePages.collectAsState()
+                val activePageIndex by viewModel.activePageIndex.collectAsState()
+                var thumbnailGroupIndex by remember { mutableIntStateOf(0) }
+                val maxThumbnailsPerGroup = 3
+                val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
+
+                Row(
                     modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(if (isSelected) 16.dp else 6.dp, 6.dp)
-                        .clip(CircleShape)
-                        .background(if (isSelected) themeColor else Color.White.copy(alpha = 0.25f))
-                        .clickable {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left navigation
+                    Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                        if (thumbnailGroupIndex > 0) {
+                            IconButton(onClick = { thumbnailGroupIndex-- }) {
+                                Icon(imageVector = Icons.Default.ChevronLeft, contentDescription = "左翻", tint = Color.White)
                             }
                         }
-                )
+                    }
+
+                    // Main 3 thumbnails section
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val startIdx = thumbnailGroupIndex * maxThumbnailsPerGroup
+                        val endIdx = minOf(startIdx + maxThumbnailsPerGroup, homePages.size)
+
+                        for (idx in startIdx until endIdx) {
+                            val page = homePages[idx]
+                            val isCurrentPage = idx == activePageIndex
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(90.dp)
+                                    .onGloballyPositioned { bounds ->
+                                        val coords = bounds.positionInWindow()
+                                        val left = coords.x / density
+                                        val top = coords.y / density
+                                        val w = bounds.size.width / density
+                                        val h = bounds.size.height / density
+
+                                        // Register current coordinates in map for dropped item targets
+                                        viewModel.drawerThumbnailBounds = viewModel.drawerThumbnailBounds + (idx to RectBounds(left, top, left + w, top + h))
+                                    }
+                                    .border(
+                                        width = if (isCurrentPage) 2.5.dp else 1.2.dp,
+                                        color = if (isCurrentPage) themeColor else Color.White.copy(alpha = 0.65f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isCurrentPage) themeColor.copy(alpha = 0.82f) else Color(0xFF3A3A3D)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(6.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.SpaceAround
+                                    ) {
+                                        Text(
+                                            text = if (idx == 0) "主屏幕 1" else "主屏幕 ${idx + 1}",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (idx == 0) {
+                                                Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = if (isCurrentPage) Color.White else themeColor, modifier = Modifier.size(10.dp))
+                                            }
+                                            if (page.widgets.isNotEmpty()) {
+                                                Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(10.dp))
+                                                Text(text = "${page.widgets.size}", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp)
+                                            }
+                                            if (page.apps.isNotEmpty()) {
+                                                Icon(imageVector = Icons.Default.Apps, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(10.dp))
+                                                Text(text = "${page.apps.size}", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp)
+                                            }
+                                            if (idx > 0 && page.apps.isEmpty() && page.widgets.isEmpty()) {
+                                                Text(text = "空白页", color = Color.White.copy(alpha = 0.65f), fontSize = 8.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add new page thumbnail if in last group and we can add more pages
+                        val isLastGroup = (thumbnailGroupIndex + 1) == totalGroups || totalGroups == 0
+                        if (isLastGroup && homePages.size < 20) {
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(90.dp)
+                                    .clickable {
+                                        viewModel.addHomePage()
+                                        showToast("已成功创建新主屏幕页")
+                                    },
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = "新增", tint = themeColor, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(text = "添加空白页", color = Color.Gray, fontSize = 8.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Right navigation
+                    Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                        val hasMoreOnRight = (thumbnailGroupIndex + 1) < totalGroups
+                        if (hasMoreOnRight) {
+                            IconButton(onClick = { thumbnailGroupIndex++ }) {
+                                Icon(imageVector = Icons.Default.ChevronRight, contentDescription = "右翻", tint = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!isDraggingFromDrawer) {
+            // 3. Multi-in-one unified navigation indicator dots at the bottom of the drawer (maps 1-to-1 to all pages)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(totalDrawerPages) { index ->
+                    val isSelected = pagerState.currentPage == index
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 4.dp)
+                            .size(if (isSelected) 16.dp else 6.dp, 6.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) themeColor else Color.White.copy(alpha = 0.25f))
+                            .clickable {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            }
+                    )
+                }
             }
         }
 
@@ -537,13 +706,16 @@ fun SingleAppsPageGrid(
                 .padding(horizontal = 8.dp),
             contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp)
         ) {
-            itemsIndexed(pageApps) { _, app ->
+            itemsIndexed(pageApps) { localIndex, app ->
+                val globalIdx = startIdx + localIndex
                 var itemScreenX by remember { mutableStateOf(0f) }
                 var itemScreenY by remember { mutableStateOf(0f) }
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center, // perfectly center vertical contents
+                val preUninstallApp by viewModel.preUninstallApp.collectAsState()
+                val isPreUninstall = preUninstallApp?.packageName == app.packageName
+
+                Box(
+                    contentAlignment = Alignment.TopEnd,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(cellHeight) // 📊 Auto-matching responsive cellular heights
@@ -551,55 +723,85 @@ fun SingleAppsPageGrid(
                             val coords = bounds.positionInWindow()
                             itemScreenX = coords.x / density
                             itemScreenY = coords.y / density
+                            val w = bounds.size.width / density
+                            val h = bounds.size.height / density
+                            viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to RectBounds(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
                         }
-                        .pointerInput(app) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = { localOffset ->
-                                    viewModel.draggedApp = app
-                                    viewModel.isDraggingActive = true
-                                    viewModel.isDraggingFromDock = false
-                                    viewModel.dragSourceIndex = -1
-                                    viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                        x = itemScreenX + 26f,
-                                        y = itemScreenY + 26f
-                                    )
-                                },
-                                onDragEnd = {
-                                    onDrop()
-                                },
-                                onDragCancel = {
-                                    viewModel.draggedApp = null
-                                    viewModel.isDraggingActive = false
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
-                                        x = dragAmount.x / density,
-                                        y = dragAmount.y / density
-                                    )
-                                }
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(app) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { localOffset ->
+                                        viewModel.draggedApp = app
+                                        viewModel.isDraggingActive = true
+                                        viewModel.isDraggingFromDock = false
+                                        viewModel.isDraggingFromDrawer = true
+                                        viewModel.dragSourceIndex = -1
+                                        viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                            x = itemScreenX + 26f,
+                                            y = itemScreenY + 26f
+                                        )
+                                        viewModel.dragDistance = -1f
+                                        viewModel.preUninstallApp.value = null
+                                    },
+                                    onDragEnd = {
+                                        // Handled globally
+                                    },
+                                    onDragCancel = {
+                                        // Handled globally
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                    }
+                                )
+                            }
+                            .clickable { app.launch(context) }
+                    ) {
+                        IconStylingCard(
+                            app = app,
+                            filter = iconFilter,
+                            themeColor = themeColor,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        
+                        if (showLabels) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = app.label,
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 4.dp)
                             )
                         }
-                        .clickable { app.launch(context) }
-                ) {
-                    IconStylingCard(
-                        app = app,
-                        filter = iconFilter,
-                        themeColor = themeColor,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    
-                    if (showLabels) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = app.label,
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
+                    }
+
+                    if (isPreUninstall) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 4.dp, top = 2.dp)
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFE53935))
+                                .clickable {
+                                    viewModel.uninstallApp(context, app)
+                                    viewModel.preUninstallApp.value = null
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Uninstall",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -677,9 +879,12 @@ fun IconStylingCard(
 fun WidgetsDrawerGrid(
     pinnedWidgets: Set<String>,
     onPinWidgetToggle: (String) -> Unit,
-    themeColor: Color
+    themeColor: Color,
+    viewModel: LauncherViewModel,
+    onDrop: () -> Unit
 ) {
     val widgetPresets = listOf("RAM Booster", "Music Cassette", "Quick Tasks", "Power Battery")
+    val density = LocalDensity.current.density
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(1),
@@ -688,10 +893,48 @@ fun WidgetsDrawerGrid(
     ) {
         itemsIndexed(widgetPresets) { _, widget ->
             val isPinned = pinnedWidgets.contains(widget)
+            var itemScreenX by remember { mutableStateOf(0f) }
+            var itemScreenY by remember { mutableStateOf(0f) }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
+                    .onGloballyPositioned { bounds ->
+                        val coords = bounds.positionInWindow()
+                        itemScreenX = coords.x / density
+                        itemScreenY = coords.y / density
+                    }
+                    .pointerInput(widget) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { localOffset ->
+                                viewModel.draggedApp = AppModel(widget, "WIDGET:$widget", "")
+                                viewModel.isDraggingActive = true
+                                viewModel.isDraggingFromDock = false
+                                viewModel.isDraggingFromDrawer = true
+                                viewModel.dragSourceIndex = -1
+                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                    x = itemScreenX + 100f,
+                                    y = itemScreenY + 40f
+                                )
+                            },
+                            onDragEnd = {
+                                onDrop()
+                            },
+                            onDragCancel = {
+                                viewModel.draggedApp = null
+                                viewModel.isDraggingActive = false
+                                viewModel.isDraggingFromDrawer = false
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
+                                    x = dragAmount.x / density,
+                                    y = dragAmount.y / density
+                                )
+                            }
+                        )
+                    }
             ) {
                 // Interactive micro component preview
                 LauncherCustomWidgets(

@@ -11,12 +11,15 @@ import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +38,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -158,20 +162,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LauncherHomeScreen(
     viewModel: LauncherViewModel,
     themeColor: Color
 ) {
     val context = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     
     // UI Panel visibility states
     var isAppDrawerOpen by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isGesturePanelOpen by remember { mutableStateOf(false) }
-
-    // Floating Pinned Widgets on desktop
-    var pinnedWidgets by remember { mutableStateOf(setOf<String>("RAM Booster", "Music Cassette")) }
+    var isAddScreenOpen by remember { mutableStateOf(false) }
 
     // Collect settings from StateFlow
     val wallpaperName by viewModel.wallpaperName.collectAsState()
@@ -180,6 +184,9 @@ fun LauncherHomeScreen(
     val appList by viewModel.appList.collectAsState()
     val showLabels by viewModel.showLabels.collectAsState()
     val iconPackFilter by viewModel.iconPackFilter.collectAsState()
+    
+    val homePages by viewModel.homePages.collectAsState()
+    val activePageIndex by viewModel.activePageIndex.collectAsState()
 
     // Slide-up trigger animation
     val appDrawerOffset by animateDpAsState(
@@ -209,48 +216,132 @@ fun LauncherHomeScreen(
         if (app != null) {
             val dropX = viewModel.dragOffset.x
             val dropY = viewModel.dragOffset.y
-            val isOverDockZone = dropY >= (screenHeight - 160)
 
-            if (isOverDockZone) {
-                val currentDockList = dockPackages.toMutableList()
-                
-                if (viewModel.isDraggingFromDock && viewModel.dragSourceIndex in currentDockList.indices) {
-                    currentDockList.removeAt(viewModel.dragSourceIndex)
+            if (viewModel.isDraggingFromDrawer) {
+                var droppedOnPage: Int? = null
+                for ((idx, rect) in viewModel.drawerThumbnailBounds) {
+                    if (dropX >= rect.left && dropX <= rect.right &&
+                        dropY >= rect.top && dropY <= rect.bottom
+                    ) {
+                        droppedOnPage = idx
+                        break
+                    }
                 }
-                
-                val itemsCount = currentDockList.size
-                val dockMaxWidth = 500f
-                val dockActualWidthDp = screenWidth.coerceAtMost(dockMaxWidth.toInt()) - 24f
-                val dockStartX = (screenWidth - dockActualWidthDp) / 2f
-                val activeStartX = dockStartX + 8f
-                val activeWidth = dockActualWidthDp - 16f
-                val cellWidthDp = if (itemsCount > 0) activeWidth / itemsCount else 68f
-                val targetIndex = if (itemsCount > 0) {
-                    ((dropX - activeStartX) / cellWidthDp).toInt().coerceIn(0, itemsCount)
-                } else {
-                    0
-                }
-                
-                if (app.packageName == "MENU_BUTTON") {
-                    currentDockList.add(targetIndex, "MENU_BUTTON")
-                } else {
-                    currentDockList.removeAll { it == app.packageName }
-                    currentDockList.add(targetIndex, app.packageName)
-                }
-                
-                viewModel.updateDockConfiguration(currentDockList)
-                showToast("已调整 Dock 快捷排列")
-            } else {
-                if (viewModel.isDraggingFromDock) {
-                    if (app.packageName == "MENU_BUTTON") {
-                        showToast("菜单按钮不能移除！")
+                if (droppedOnPage != null) {
+                    if (app.packageName.startsWith("WIDGET:")) {
+                        val widgetName = app.packageName.substring(7)
+                        viewModel.addWidgetToPage(droppedOnPage, widgetName)
+                        showToast("已成功将 $widgetName 添加到第 ${droppedOnPage + 1} 页主屏")
                     } else {
-                        val currentDockList = dockPackages.toMutableList()
-                        if (viewModel.dragSourceIndex in currentDockList.indices) {
-                            currentDockList.removeAt(viewModel.dragSourceIndex)
+                        viewModel.addAppToPage(droppedOnPage, app.packageName)
+                        showToast("已成功将 ${app.label} 添加到第 ${droppedOnPage + 1} 页主屏")
+                    }
+                } else {
+                    // Check if dropped inside Drawer slots to reorder
+                    var droppedOnDrawerIndex: Int? = null
+                    for ((globalIdx, rect) in viewModel.drawerItemBounds) {
+                        if (dropX >= rect.left && dropX <= rect.right &&
+                            dropY >= rect.top && dropY <= rect.bottom
+                        ) {
+                            droppedOnDrawerIndex = globalIdx
+                            break
                         }
+                    }
+                    if (droppedOnDrawerIndex == null) {
+                        // find closest slot
+                        var minDistance = Float.MAX_VALUE
+                        var closestIdx: Int? = null
+                        for ((globalIdx, rect) in viewModel.drawerItemBounds) {
+                            val centerX = (rect.left + rect.right) / 2f
+                            val centerY = (rect.top + rect.bottom) / 2f
+                            val dist = (dropX - centerX) * (dropX - centerX) + (dropY - centerY) * (dropY - centerY)
+                            if (dist < minDistance) {
+                                minDistance = dist
+                                closestIdx = globalIdx
+                            }
+                        }
+                        if (minDistance < 20000f) {
+                            droppedOnDrawerIndex = closestIdx
+                        }
+                    }
+
+                    if (droppedOnDrawerIndex != null) {
+                        viewModel.reorderDrawerApp(app.packageName, droppedOnDrawerIndex)
+                        showToast("已调整应用抽屉图标排序")
+                    } else {
+                        showToast("请将图标/组件挪动至主屏幕缩略图上以完成添加")
+                    }
+                }
+            } else {
+                val isOverTopBar = dropY <= 100f && dropY > 0f
+                if (isOverTopBar) {
+                    if (dropX < screenWidth / 2f) {
+                        // Left side: delete shortcut
+                        if (viewModel.isDraggingFromDock) {
+                            val currentDockList = dockPackages.toMutableList()
+                            if (viewModel.dragSourceIndex in currentDockList.indices) {
+                                currentDockList.removeAt(viewModel.dragSourceIndex)
+                            }
+                            viewModel.updateDockConfiguration(currentDockList)
+                            showToast("已移除 ${app.label} 快捷图标")
+                        } else {
+                            viewModel.removeAppFromPage(viewModel.activePageIndex.value, app.packageName)
+                            showToast("已从桌面移除 ${app.label} 快捷图标")
+                        }
+                    } else {
+                        // Right side: uninstall app
+                        viewModel.uninstallApp(context, app)
+                    }
+                } else {
+                    val isOverDockZone = dropY >= (screenHeight - 160)
+
+                    if (isOverDockZone) {
+                        val currentDockList = dockPackages.toMutableList()
+                        
+                        if (viewModel.isDraggingFromDock && viewModel.dragSourceIndex in currentDockList.indices) {
+                            currentDockList.removeAt(viewModel.dragSourceIndex)
+                        } else {
+                            // Dragged from home screen - remove from the home screen page
+                            if (!app.packageName.startsWith("WIDGET:") && app.packageName != "MENU_BUTTON") {
+                                viewModel.removeAppFromPage(viewModel.activePageIndex.value, app.packageName)
+                            }
+                        }
+                        
+                        val itemsCount = currentDockList.size
+                        val dockMaxWidth = 500f
+                        val dockActualWidthDp = screenWidth.coerceAtMost(dockMaxWidth.toInt()) - 24f
+                        val dockStartX = (screenWidth - dockActualWidthDp) / 2f
+                        val activeStartX = dockStartX + 8f
+                        val activeWidth = dockActualWidthDp - 16f
+                        val cellWidthDp = if (itemsCount > 0) activeWidth / itemsCount else 68f
+                        val targetIndex = if (itemsCount > 0) {
+                            ((dropX - activeStartX) / cellWidthDp).toInt().coerceIn(0, itemsCount)
+                        } else {
+                            0
+                        }
+                        
+                        if (app.packageName == "MENU_BUTTON") {
+                            currentDockList.add(targetIndex, "MENU_BUTTON")
+                        } else {
+                            currentDockList.removeAll { it == app.packageName }
+                            currentDockList.add(targetIndex, app.packageName)
+                        }
+                        
                         viewModel.updateDockConfiguration(currentDockList)
-                        showToast("已从 Dock 移除: ${app.label}")
+                        showToast("已调整 Dock 快捷排列")
+                    } else {
+                        if (viewModel.isDraggingFromDock) {
+                            if (app.packageName == "MENU_BUTTON") {
+                                showToast("菜单按钮不能移除！")
+                            } else {
+                                val currentDockList = dockPackages.toMutableList()
+                                if (viewModel.dragSourceIndex in currentDockList.indices) {
+                                    currentDockList.removeAt(viewModel.dragSourceIndex)
+                                }
+                                viewModel.updateDockConfiguration(currentDockList)
+                                showToast("已从 Dock 移除: ${app.label}")
+                            }
+                        }
                     }
                 }
             }
@@ -259,12 +350,21 @@ fun LauncherHomeScreen(
         viewModel.draggedApp = null
         viewModel.isDraggingActive = false
         viewModel.isDraggingFromDock = false
+        viewModel.isDraggingFromDrawer = false
         viewModel.dragSourceIndex = -1
+        viewModel.isEditingHomeScreen = false
     }
 
     // Intercept standard hardware system Android Back Press
-    BackHandler(enabled = isAppDrawerOpen || isSettingsOpen || isGesturePanelOpen) {
+    val preUninstallApp by viewModel.preUninstallApp.collectAsState()
+    BackHandler(enabled = isAppDrawerOpen || isSettingsOpen || isGesturePanelOpen || preUninstallApp != null || viewModel.isEditingHomeScreen) {
         when {
+            viewModel.preUninstallApp.value != null -> {
+                viewModel.preUninstallApp.value = null
+            }
+            viewModel.isEditingHomeScreen -> {
+                viewModel.isEditingHomeScreen = false
+            }
             isSettingsOpen -> isSettingsOpen = false
             isGesturePanelOpen -> isGesturePanelOpen = false
             isAppDrawerOpen -> {
@@ -280,7 +380,69 @@ fun LauncherHomeScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (viewModel.isDraggingActive) {
+                            val change = event.changes.firstOrNull()
+                            if (change != null) {
+                                val d = density.density
+                                val screenWidth = context.resources.displayMetrics.widthPixels / d
+                                val newX = change.position.x / d
+                                val newY = change.position.y / d
+
+                                if (viewModel.dragDistance == -1f) {
+                                    viewModel.dragDistance = 0f
+                                    viewModel.dragOffset = androidx.compose.ui.geometry.Offset(newX, newY)
+                                } else {
+                                    val oldOffset = viewModel.dragOffset
+                                    if (oldOffset != androidx.compose.ui.geometry.Offset.Zero) {
+                                        val dx = newX - oldOffset.x
+                                        val dy = newY - oldOffset.y
+                                        viewModel.dragDistance += Math.abs(dx) + Math.abs(dy)
+                                    }
+                                }
+
+                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(newX, newY)
+                                change.consume()
+
+                                if (viewModel.isDraggingFromDrawer && viewModel.draggedApp?.packageName?.startsWith("WIDGET:") != true) {
+                                    val itemsPerPage = when (viewModel.drawerGrid.value) {
+                                        "5x5" -> 25
+                                        else -> 24
+                                    }
+                                    val displayApps = viewModel.filteredApps.value
+                                    val totalPages = Math.max(1, (displayApps.size + itemsPerPage - 1) / itemsPerPage) + 2
+                                    viewModel.checkDrawerEdgeScroll(viewModel.dragOffset.x, screenWidth, totalPages)
+                                } else {
+                                    viewModel.checkHomeEdgeScroll(viewModel.dragOffset.x, screenWidth, homePages.size)
+                                }
+
+                                val anyPressed = event.changes.any { it.pressed }
+                                if (!anyPressed) {
+                                    if (viewModel.dragDistance < 12f) {
+                                        if (viewModel.isDraggingFromDrawer) {
+                                            viewModel.preUninstallApp.value = viewModel.draggedApp
+                                        }
+                                        viewModel.draggedApp = null
+                                        viewModel.isDraggingActive = false
+                                        viewModel.isDraggingFromDrawer = false
+                                        viewModel.isDraggingFromDock = false
+                                        viewModel.isEditingHomeScreen = false
+                                    } else {
+                                        handleGlobalDrop()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    ) {
         
         // 1. Dynamic Wallpaper Draw Engine (Centers & Animated Particles)
         LauncherBackground(wallpaperName = wallpaperName)
@@ -316,36 +478,215 @@ fun LauncherHomeScreen(
                     }
                 }
         ) {
+            val pagerState = rememberPagerState(
+                initialPage = activePageIndex.coerceIn(0, maxOf(1, homePages.size) - 1),
+                pageCount = { homePages.size }
+            )
+
+            // Sync page states
+            LaunchedEffect(pagerState.currentPage) {
+                if (viewModel.activePageIndex.value != pagerState.currentPage) {
+                    viewModel.activePageIndex.value = pagerState.currentPage
+                }
+            }
+            LaunchedEffect(activePageIndex) {
+                val bounded = activePageIndex.coerceIn(0, homePages.size - 1)
+                if (pagerState.currentPage != bounded && homePages.isNotEmpty()) {
+                    pagerState.animateScrollToPage(bounded)
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
                     .padding(bottom = 120.dp) // Leave blank space at bottom for floating Dock
             ) {
-                // 2. Centerpiece clocks widget
-                LauncherClock(
-                    clockStyle = clockStyle,
-                    themeColor = themeColor,
-                    viewModel = viewModel,
-                    modifier = Modifier.padding(top = 40.dp)
-                )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f)
+                ) { idx ->
+                    val page = homePages.getOrNull(idx) ?: HomeScreenPage(idx.toString())
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (idx == 0) {
+                            LauncherClock(
+                                clockStyle = clockStyle,
+                                themeColor = themeColor,
+                                viewModel = viewModel,
+                                modifier = Modifier.padding(top = 40.dp)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(30.dp))
+                        }
 
-                // 3. Desktop scroll deck harboring dynamic pinned widgets
-                val scrollState = rememberScrollState()
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(scrollState),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    pinnedWidgets.forEach { widget ->
-                        LauncherCustomWidgets(
-                            widgetType = widget,
-                            themeColor = themeColor,
-                            viewModel = viewModel
-                        )
+                        // Render Pinned Widgets for this exact page
+                        page.widgets.forEach { widget ->
+                            var showMenu by remember { mutableStateOf(false) }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .pointerInput(widget) {
+                                        detectTapGestures(
+                                            onLongPress = { showMenu = true }
+                                        )
+                                    }
+                            ) {
+                                LauncherCustomWidgets(
+                                    widgetType = widget,
+                                    themeColor = themeColor,
+                                    viewModel = viewModel
+                                )
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("从桌面页面移除此组件") },
+                                        onClick = {
+                                            viewModel.removeWidgetFromPage(idx, widget)
+                                            showToast("已成功移除组件：$widget")
+                                            showMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // App Grid representation on this exact page
+                        val pageApps = appList.filter { page.apps.contains(it.packageName) }
+                        if (pageApps.isNotEmpty()) {
+                            val chunkedApps = pageApps.chunked(4)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                chunkedApps.forEach { rowApps ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        rowApps.forEach { app ->
+                                            var showShortCutMenu by remember { mutableStateOf(false) }
+                                            var itemScreenX by remember { mutableStateOf(0f) }
+                                            var itemScreenY by remember { mutableStateOf(0f) }
+                                            val density = androidx.compose.ui.platform.LocalDensity.current.density
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable { app.launch(context) }
+                                                    .onGloballyPositioned { bounds ->
+                                                        val coords = bounds.positionInWindow()
+                                                        itemScreenX = coords.x / density
+                                                        itemScreenY = coords.y / density
+                                                    }
+                                                    .pointerInput(app) {
+                                                        detectDragGesturesAfterLongPress(
+                                                            onDragStart = { localOffset ->
+                                                                viewModel.draggedApp = app
+                                                                viewModel.isDraggingActive = true
+                                                                viewModel.isDraggingFromDock = false
+                                                                viewModel.isDraggingFromDrawer = false
+                                                                viewModel.dragSourceIndex = -1
+                                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                                    x = itemScreenX + 26f,
+                                                                    y = itemScreenY + 26f
+                                                                )
+                                                                viewModel.dragDistance = -1f
+                                                                showShortCutMenu = true
+                                                                viewModel.isEditingHomeScreen = true
+                                                            },
+                                                            onDragEnd = {
+                                                                // Handled globally
+                                                            },
+                                                            onDragCancel = {
+                                                                // Handled globally
+                                                            },
+                                                            onDrag = { change, dragAmount ->
+                                                                change.consume()
+                                                                showShortCutMenu = false
+                                                            }
+                                                        )
+                                                    }
+                                            ) {
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                ) {
+                                                    IconStylingCard(
+                                                        app = app,
+                                                        filter = iconPackFilter,
+                                                        themeColor = themeColor,
+                                                        modifier = Modifier.size(54.dp)
+                                                    )
+                                                    if (showLabels) {
+                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                        Text(
+                                                            text = app.label,
+                                                            color = Color.White,
+                                                            fontSize = 11.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            textAlign = TextAlign.Center
+                                                        )
+                                                    }
+                                                    DropdownMenu(
+                                                        expanded = showShortCutMenu && !viewModel.isDraggingActive,
+                                                        onDismissRequest = { showShortCutMenu = false }
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("从桌面页移除快捷方式") },
+                                                            onClick = {
+                                                                viewModel.removeAppFromPage(idx, app.packageName)
+                                                                showToast("已删除 ${app.label} 快捷方式")
+                                                                showShortCutMenu = false
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (rowApps.size < 4) {
+                                            repeat(4 - rowApps.size) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Page indicators inside the column as a bottom bar dots group
+                if (homePages.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        homePages.forEachIndexed { idx, _ ->
+                            val isCurrent = idx == pagerState.currentPage
+                            Box(
+                                modifier = Modifier
+                                    .size(if (isCurrent) 8.dp else 6.dp)
+                                    .padding(horizontal = 2.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isCurrent) themeColor else Color.White.copy(alpha = 0.40f))
+                            )
+                        }
                     }
                 }
             }
@@ -411,20 +752,17 @@ fun LauncherHomeScreen(
                                                 x = itemScreenX + 25f,
                                                 y = itemScreenY + 25f
                                             )
+                                            viewModel.dragDistance = -1f
+                                            viewModel.isEditingHomeScreen = true
                                         },
                                         onDragEnd = {
-                                            handleGlobalDrop()
+                                            // Handled globally
                                         },
                                         onDragCancel = {
-                                            viewModel.draggedApp = null
-                                            viewModel.isDraggingActive = false
+                                            // Handled globally
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
-                                                x = dragAmount.x / density,
-                                                y = dragAmount.y / density
-                                            )
                                         }
                                     )
                                 },
@@ -534,8 +872,7 @@ fun LauncherHomeScreen(
                         val gridItems = listOf(
                             GestureMenuOption("添加", Icons.Default.Add) {
                                 isGesturePanelOpen = false
-                                isAppDrawerOpen = true
-                                showToast("请滑动至「小部件」页签长按拖拽添加")
+                                isAddScreenOpen = true
                             },
                             GestureMenuOption("换特效", Icons.Default.AutoAwesome) {
                                 isGesturePanelOpen = false
@@ -571,12 +908,8 @@ fun LauncherHomeScreen(
                             },
                             GestureMenuOption("屏幕预览", Icons.Default.Visibility) {
                                 isGesturePanelOpen = false
-                                pinnedWidgets = if (pinnedWidgets.isEmpty()) {
-                                    setOf("RAM Booster", "Music Cassette")
-                                } else {
-                                    emptySet()
-                                }
-                                showToast("已切换桌面极简纯净模式")
+                                isAddScreenOpen = true
+                                showToast("已开启桌面屏幕多页管理预览")
                             },
                             GestureMenuOption("桌面设置", Icons.Default.GridView) {
                                 isGesturePanelOpen = false
@@ -632,7 +965,9 @@ fun LauncherHomeScreen(
 
         // 6. Sliding applications Horizontal Drawer
         val drawerAlpha by animateFloatAsState(
-            targetValue = if (viewModel.isDraggingActive) 0.15f else 1f,
+            targetValue = if (viewModel.isDraggingActive) {
+                if (viewModel.isDraggingFromDrawer) 1f else 0.15f
+            } else 1f,
             label = "drawerAlpha"
         )
 
@@ -647,17 +982,18 @@ fun LauncherHomeScreen(
                 themeColor = themeColor,
                 onClose = { isAppDrawerOpen = false },
                 showToast = showToast,
-                pinnedWidgets = pinnedWidgets,
+                pinnedWidgets = homePages.getOrNull(activePageIndex)?.widgets?.toSet() ?: emptySet(),
                 onPinWidgetToggle = { widgetName ->
-                    val current = pinnedWidgets.toMutableSet()
-                    if (current.contains(widgetName)) {
-                        current.remove(widgetName)
-                        showToast("已在桌面主屏移除: $widgetName")
-                    } else {
-                        current.add(widgetName)
-                        showToast("已成功贴合至主屏: $widgetName")
+                    val activePage = homePages.getOrNull(activePageIndex)
+                    if (activePage != null) {
+                        if (activePage.widgets.contains(widgetName)) {
+                            viewModel.removeWidgetFromPage(activePageIndex, widgetName)
+                            showToast("已在桌面主屏移除: $widgetName")
+                        } else {
+                            viewModel.addWidgetToPage(activePageIndex, widgetName)
+                            showToast("已成功贴合至第 ${activePageIndex + 1} 页主屏: $widgetName")
+                        }
                     }
-                    pinnedWidgets = current
                     isAppDrawerOpen = false
                 },
                 onDrop = handleGlobalDrop
@@ -678,6 +1014,104 @@ fun LauncherHomeScreen(
             )
         }
 
+        // 8. Elegant top options bar for home screen edit/pre-uninstall/dragging style
+        AnimatedVisibility(
+            visible = viewModel.isEditingHomeScreen,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            val dropX = viewModel.dragOffset.x
+            val dropY = viewModel.dragOffset.y
+            val isOverLeftDelete = dropY <= 100 && dropX < screenWidth / 2f && viewModel.isDraggingActive
+            val isOverRightUninstall = dropY <= 100 && dropX >= screenWidth / 2f && viewModel.isDraggingActive
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(82.dp)
+                    .shadow(16.dp, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xF21C1C1E)
+                ),
+                border = BorderStroke(1.dp, Color(0x2BFFFFFF))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Left Option: Delete Shortcut
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(if (isOverLeftDelete) Color(0x3DF44336) else Color.Transparent)
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = if (isOverLeftDelete) Color(0xFFEF5350) else Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "删除图标",
+                                color = if (isOverLeftDelete) Color(0xFFEF5350) else Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Divider line
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(1.dp)
+                            .background(Color(0x1BFFFFFF))
+                    )
+
+                    // Right Option: Uninstall App entirely
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(if (isOverRightUninstall) Color(0x3DF44336) else Color.Transparent)
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cancel,
+                                contentDescription = "Uninstall",
+                                tint = if (isOverRightUninstall) Color(0xFFEF5350) else Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "卸载应用",
+                                color = if (isOverRightUninstall) Color(0xFFEF5350) else Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // 8. Live Drag and Drop Floating Overlay rendering on top of everything (isolated to prevent full-screen recomposition)
         DragOverlay(
             viewModel = viewModel,
@@ -691,6 +1125,20 @@ fun LauncherHomeScreen(
                 viewModel = viewModel,
                 themeColor = themeColor,
                 onClose = { viewModel.showCitySelectorDialog = false }
+            )
+        }
+
+        // 9.5. Elegant Translucent Custom Launcher Add Page & Shortcuts Management Page
+        AnimatedVisibility(
+            visible = isAddScreenOpen,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
+        ) {
+            AddManagementScreen(
+                viewModel = viewModel,
+                themeColor = themeColor,
+                onClose = { isAddScreenOpen = false },
+                showToast = showToast
             )
         }
 
@@ -716,23 +1164,25 @@ fun DragOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.28f)) // dim background slightly
+                .background(if (viewModel.isDraggingFromDrawer) Color.Transparent else Color.Black.copy(alpha = 0.28f)) // do not dim when dragging from drawer
         ) {
-            // Dim helper dock zone representation at the bottom 160.dp
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(Color(0x27FFFFFF))
-            ) {
-                Text(
-                    text = "📥 拖拽到此放置于 Dock 栏 • 拖出松手移除",
-                    color = Color.White.copy(alpha = 0.62f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
-                )
+            // Dim helper dock zone representation at the bottom 160.dp (only when dragging from home screen / dock)
+            if (!viewModel.isDraggingFromDrawer) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(Color(0x27FFFFFF))
+                ) {
+                    Text(
+                        text = "📥 拖拽到此放置于 Dock 栏 • 拖出松手移除",
+                        color = Color.White.copy(alpha = 0.62f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp)
+                    )
+                }
             }
 
             // Dragged replica following absolute coordinates
