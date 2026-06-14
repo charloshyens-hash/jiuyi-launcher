@@ -18,6 +18,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -712,8 +713,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     var isEditingHomeScreen by mutableStateOf(false)
 
     // ── 卸载请求事件流（由 MainActivity 的 ActivityResultLauncher 消费）──────
-    private val _uninstallRequestFlow = MutableStateFlow<AppModel?>(null)
-    val uninstallRequestFlow: StateFlow<AppModel?> = _uninstallRequestFlow
+    private val _uninstallRequestFlow = kotlinx.coroutines.flow.MutableSharedFlow<AppModel>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+    )
+    val uninstallRequestFlow = _uninstallRequestFlow.asSharedFlow()
 
     val hiddenPackagesFlow = MutableStateFlow<Set<String>>(prefs.hiddenPackages)
 
@@ -1205,12 +1209,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         // 真实应用：通过 StateFlow 通知 MainActivity 使用 ActivityResultLauncher 发起卸载
         // 这样才能在用户确认卸载后收到回调，正确刷新列表
-        _uninstallRequestFlow.value = app
+        _uninstallRequestFlow.tryEmit(app)
     }
 
     // ── 由 MainActivity 在卸载结果回调中调用 ─────────────────────────────────
     fun onUninstallResult(packageName: String, success: Boolean) {
-        _uninstallRequestFlow.value = null
         if (success) {
             removeAppFromEverywhereLocal(packageName)
             preUninstallApp.value = null

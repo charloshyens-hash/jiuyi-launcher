@@ -116,7 +116,6 @@ class MainActivity : ComponentActivity() {
                     pendingUninstallPackage = app.packageName
                     val intent = Intent(Intent.ACTION_DELETE).apply {
                         data = android.net.Uri.parse("package:${app.packageName}")
-                        putExtra(Intent.EXTRA_RETURN_RESULT, true)
                     }
                     try {
                         uninstallLauncher.launch(intent)
