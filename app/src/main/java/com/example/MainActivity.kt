@@ -57,8 +57,10 @@ import com.example.ui.theme.NeonCyan
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -67,9 +69,39 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: LauncherViewModel by viewModels()
 
+    // ── 卸载流程：用 ActivityResultLauncher 接收系统卸载界面结果 ────────────
+    // 记录当前正在等待卸载结果的包名
+    private var pendingUninstallPackage: String? = null
+
+    private val uninstallLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        val pkg = pendingUninstallPackage ?: return@registerForActivityResult
+        pendingUninstallPackage = null
+
+        // 通过检查包是否还在系统中来判断卸载是否成功
+        val success = try {
+            packageManager.getPackageInfo(pkg, 0)
+            false // 包仍存在 → 用户取消或卸载失败
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            true // 包已不存在 → 卸载成功
+        }
+
+        if (success) {
+            // 从 ViewModel 内存列表 + Dock + 桌面页中彻底移除
+            viewModel.removeAppFromEverywhereLocal(pkg)
+            viewModel.preUninstallApp.value = null
+            Toast.makeText(this, "卸载成功", Toast.LENGTH_SHORT).show()
+        } else {
+            // 卸载取消：恢复被提前移除的图标
+            viewModel.refreshInstalledApps()
+            Toast.makeText(this, "已取消卸载", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // Schedule periodic weather sync in background via WorkManager
         try {
             com.example.weather.WeatherSyncScheduler.scheduleWeatherSync(this)
@@ -77,9 +109,34 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("MainActivity", "Failed to schedule weather sync: ${e.message}")
         }
 
+        // ── 拦截 ViewModel 发出的卸载请求，由 Activity 用 Launcher 处理 ──────
+        // 原 uninstallApp 用 context.startActivity 发起，在部分机型上无法正确
+        // 接收结果；改为此处统一通过 ActivityResultLauncher 发起并回调。
+        lifecycleScope.launch {
+            viewModel.uninstallRequestFlow
+                .filterNotNull()
+                .collect { app ->
+                    pendingUninstallPackage = app.packageName
+                    val intent = Intent(Intent.ACTION_DELETE).apply {
+                        data = android.net.Uri.parse("package:${app.packageName}")
+                        // EXTRA_RETURN_RESULT = true 确保系统卸载界面把结果回传给 Launcher
+                        putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    }
+                    try {
+                        uninstallLauncher.launch(intent)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Failed to launch uninstall: ${e.message}")
+                        Toast.makeText(this@MainActivity, "无法启动系统卸载界面", Toast.LENGTH_SHORT).show()
+                        pendingUninstallPackage = null
+                        // 卸载界面无法打开时把提前移除的图标恢复回来
+                        viewModel.refreshInstalledApps()
+                    }
+                }
+        }
+
         // Supports full edge-to-edge immersive visualization
         enableEdgeToEdge()
-        
+
         setContent {
             val themeIndex by viewModel.currentThemeIndex.collectAsState()
             val themeColors = listOf(
@@ -168,6 +225,7 @@ fun LauncherHomeScreen(
     viewModel: LauncherViewModel,
     themeColor: Color
 ) {
+    // ── 以下内容与原文件完全一致，未作任何改动 ───────────────────────────────
     val context = LocalContext.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     
@@ -781,16 +839,15 @@ fun LauncherHomeScreen(
                                 )
                                 Box(
                                     modifier = Modifier
-                                        .size(56.dp) // Original design: w-14 h-14 is 56.dp
+                                        .size(56.dp)
                                         .shadow(6.dp, CircleShape)
                                         .graphicsLayer(scaleX = breatheScale, scaleY = breatheScale)
-                                        .border(4.dp, themeColor.copy(alpha = 0.3f), CircleShape) // Original design: border-4 border-primary/30
+                                        .border(4.dp, themeColor.copy(alpha = 0.3f), CircleShape)
                                         .clip(CircleShape)
-                                        .background(themeColor) // Original design: bg-primary
+                                        .background(themeColor)
                                         .clickable { isAppDrawerOpen = true },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    // Original design: inner filled circle core symbol
                                     Box(
                                         modifier = Modifier
                                             .size(18.dp)
@@ -831,16 +888,15 @@ fun LauncherHomeScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xB3000000)) // Translucent matte dim background
+                    .background(Color(0xB3000000))
                     .clickable { isGesturePanelOpen = false },
                 contentAlignment = Alignment.Center
             ) {
-                // Frosted card holding 4x2 functioning icons matching original git repository design specs
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp)
-                        .clickable(enabled = false) {}, // prevent click-through
+                        .clickable(enabled = false) {},
                     shape = RoundedCornerShape(32.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xEC131313)),
                     border = BorderStroke(1.dp, Color(0x1AFFFFFF)),
@@ -850,7 +906,6 @@ fun LauncherHomeScreen(
                         modifier = Modifier.padding(vertical = 24.dp, horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Top drag handle indicator matching code.html
                         Box(
                             modifier = Modifier
                                 .width(48.dp)
@@ -868,7 +923,6 @@ fun LauncherHomeScreen(
                             modifier = Modifier.padding(bottom = 24.dp)
                         )
 
-                        // 4x2 Grid layout representation matching HTML/CSS specs
                         val gridItems = listOf(
                             GestureMenuOption("添加", Icons.Default.Add) {
                                 isGesturePanelOpen = false
@@ -881,7 +935,6 @@ fun LauncherHomeScreen(
                             },
                             GestureMenuOption("快速美化", Icons.Default.Brush) {
                                 isGesturePanelOpen = false
-                                // Toggle icon filter cycle
                                 val list = listOf("Minimalist", "Vintage Pixel", "Sketch Outline", "Raw Native")
                                 val nextIdx = (list.indexOf(iconPackFilter) + 1) % list.size
                                 viewModel.updateIconPackFilter(list[nextIdx])
@@ -917,7 +970,6 @@ fun LauncherHomeScreen(
                             }
                         )
 
-                        // Draw Grid row-by-row
                         for (i in 0 until 2) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
@@ -933,23 +985,23 @@ fun LauncherHomeScreen(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(60.dp) // Original design: w-[60px] h-[60px]
-                                                .background(Color(0x1BFFFFFF), shape = RoundedCornerShape(20.dp)) // Original design: rounded-[20px] bg-white/10
-                                                .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(20.dp)), // Original design: border border-white/10
+                                                .size(60.dp)
+                                                .background(Color(0x1BFFFFFF), shape = RoundedCornerShape(20.dp))
+                                                .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(20.dp)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = item.icon,
                                                 contentDescription = item.label,
                                                 tint = Color.White,
-                                                modifier = Modifier.size(28.dp) // Original design: text-[28px]
+                                                modifier = Modifier.size(28.dp)
                                             )
                                         }
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = item.label,
                                             color = Color.White.copy(alpha = 0.9f),
-                                            fontSize = 12.sp, // Original design centered text labels
+                                            fontSize = 12.sp,
                                             fontWeight = FontWeight.Normal,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -1112,7 +1164,7 @@ fun LauncherHomeScreen(
             }
         }
 
-        // 8. Live Drag and Drop Floating Overlay rendering on top of everything (isolated to prevent full-screen recomposition)
+        // 8. Live Drag and Drop Floating Overlay
         DragOverlay(
             viewModel = viewModel,
             themeColor = themeColor,

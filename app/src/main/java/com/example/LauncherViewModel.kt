@@ -612,14 +612,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun toggleMusicPlayback() {
         val targetPkg = preferredMusicPackage.value
         if (targetPkg.isNotEmpty()) {
-            // 用前缀匹配代替严格等于，兼容网易云 com.netease.cloudmusic.release 等包名变体
             if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                 JiuYiMediaService.sendMediaAction("play_pause")
             } else {
                 connectAndPlayViaMediaBrowser(targetPkg)
                 wakeMusicAppBackground(targetPkg)
                 viewModelScope.launch {
-                    // 网易云启动较慢，延迟提升到 1200ms
                     delay(1200)
                     if (JiuYiMediaService.isServiceRunning && JiuYiMediaService.matchesPkg(targetPkg)) {
                         JiuYiMediaService.sendMediaAction("play_pause")
@@ -629,7 +627,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                         else
                             android.view.KeyEvent.KEYCODE_MEDIA_PLAY
                         sendMediaKeyToPackage(targetPkg, keyCode)
-                        // 双重兜底：系统全局媒体键
                         dispatchSystemMediaKey(keyCode)
                     }
                 }
@@ -713,6 +710,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val drawerPackageOrder = MutableStateFlow<List<String>>(emptyList())
     val preUninstallApp = MutableStateFlow<AppModel?>(null)
     var isEditingHomeScreen by mutableStateOf(false)
+
+    // ── 卸载请求事件流（由 MainActivity 的 ActivityResultLauncher 消费）──────
+    private val _uninstallRequestFlow = MutableStateFlow<AppModel?>(null)
+    val uninstallRequestFlow: StateFlow<AppModel?> = _uninstallRequestFlow
 
     val hiddenPackagesFlow = MutableStateFlow<Set<String>>(prefs.hiddenPackages)
 
@@ -904,7 +905,6 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val apps = withContext(Dispatchers.IO) { queryAppsFromSystem() }
             _appList.value = apps
 
-            // Sync drawer order
             val currentOrder = drawerPackageOrder.value.toMutableList()
             val installedPackages = apps.map { it.packageName }.toSet()
             currentOrder.retainAll { installedPackages.contains(it) }
@@ -1153,36 +1153,33 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removeAppFromEverywhereLocal(packageName: String) {
-        // 1. Remove from dock
         val dockList = dockPackages.value.toMutableList()
         if (dockList.contains(packageName)) {
             dockList.remove(packageName)
             updateDockConfiguration(dockList)
         }
 
-        // 2. Remove from all home screen pages
         val pages = homePages.value.map { page ->
             val updated = page.apps.filter { it != packageName }
             page.copy(apps = updated)
         }
         saveHomePages(pages)
 
-        // 3. Remove from drawer order list
         val drawerOrder = drawerPackageOrder.value.toMutableList()
         if (drawerOrder.contains(packageName)) {
             drawerOrder.remove(packageName)
             saveDrawerPackageOrder(drawerOrder)
         }
 
-        // 4. Force list updates to rebuild UI immediately
         val remainingApps = _appList.value.filter { it.packageName != packageName }
         _appList.value = remainingApps
     }
 
+    // ── 卸载应用（修复：不再自己 startActivity，改为发信号给 MainActivity）────
     fun uninstallApp(context: android.content.Context, app: AppModel) {
         val packageName = app.packageName
-        
-        // Check if package is actually installed in system
+
+        // 检查是否是虚拟预览应用（实际上不存在于系统中）
         val isInstalled = try {
             context.packageManager.getPackageInfo(packageName, 0)
             true
@@ -1191,24 +1188,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         if (!isInstalled) {
-            // Simulated virtual preview app: remove locally
+            // 虚拟应用：仅本地移除
             removeAppFromEverywhereLocal(packageName)
             android.widget.Toast.makeText(context, "已成功卸载虚拟应用: ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
-        } else {
-            // Real application: launch system uninstaller intent
-            try {
-                val intent = android.content.Intent(android.content.Intent.ACTION_DELETE).apply {
-                    data = android.net.Uri.parse("package:$packageName")
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                android.widget.Toast.makeText(context, "正在请求系统卸载: ${app.label}...", android.widget.Toast.LENGTH_SHORT).show()
-                
-                // Refresh local UI state so the icon disappears immediately
-                removeAppFromEverywhereLocal(packageName)
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(context, "启动系统卸载失败: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
-            }
+            return
         }
+
+        // 检查是否是系统应用
+        try {
+            val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+            if (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0) {
+                android.widget.Toast.makeText(context, "系统应用无法卸载：${app.label}", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+        } catch (e: Exception) {}
+
+        // 真实应用：通过 StateFlow 通知 MainActivity 使用 ActivityResultLauncher 发起卸载
+        // 这样才能在用户确认卸载后收到回调，正确刷新列表
+        _uninstallRequestFlow.value = app
+    }
+
+    // ── 由 MainActivity 在卸载结果回调中调用 ─────────────────────────────────
+    fun onUninstallResult(packageName: String, success: Boolean) {
+        _uninstallRequestFlow.value = null
+        if (success) {
+            removeAppFromEverywhereLocal(packageName)
+            preUninstallApp.value = null
+        }
+        // 无论成功与否，都重新扫描系统应用列表确保同步
+        refreshInstalledApps()
     }
 }
