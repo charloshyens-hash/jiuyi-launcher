@@ -62,51 +62,17 @@ fun AddManagementScreen(
     val maxThumbnailsPerGroup = 3
     val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
 
-    var thumbnailBounds by remember { mutableStateOf(emptyMap<Int, RectBounds>()) }
-
     // ── 直接读取 ViewModel 的 mutableStateOf 属性，让 Compose 自动追踪重组 ──
-    // 不要用 remember { derivedStateOf { ... } } 包裹，否则无法建立订阅
     val isDragging = viewModel.isDraggingActive
     val dragOffset = viewModel.dragOffset
     val draggedApp = viewModel.draggedApp
 
-    val handleDragEnd: () -> Unit = {
-        val dragged = viewModel.draggedApp
-        if (dragged != null) {
-            val offset = viewModel.dragOffset
-            var droppedOnThumbnailIndex: Int? = null
-
-            for ((index, rect) in thumbnailBounds) {
-                if (offset.x >= rect.left && offset.x <= rect.right &&
-                    offset.y >= rect.top && offset.y <= rect.bottom
-                ) {
-                    droppedOnThumbnailIndex = index
-                    break
-                }
-            }
-
-            if (droppedOnThumbnailIndex != null) {
-                if (dragged.packageName.startsWith("WIDGET:")) {
-                    val widgetName = dragged.packageName.substring(7)
-                    viewModel.addWidgetToPage(droppedOnThumbnailIndex, widgetName)
-                    showToast("已添加 $widgetName 到第 ${droppedOnThumbnailIndex + 1} 页")
-                } else {
-                    viewModel.addAppToPage(droppedOnThumbnailIndex, dragged.packageName)
-                    showToast("已添加快捷方式 ${dragged.label} 到第 ${droppedOnThumbnailIndex + 1} 页")
-                }
-            } else {
-                if (dragged.packageName.startsWith("WIDGET:")) {
-                    val widgetName = dragged.packageName.substring(7)
-                    viewModel.addWidgetToPage(activePageIndex, widgetName)
-                    showToast("已自动添加 $widgetName 到当前页")
-                } else {
-                    viewModel.addAppToPage(activePageIndex, dragged.packageName)
-                    showToast("已自动添加快捷方式 ${dragged.label} 到当前页")
-                }
-            }
+    // ── 进入时清空旧缩略图 bounds，离开时也清空，避免跨屏幕污染 ──
+    DisposableEffect(Unit) {
+        viewModel.addScreenThumbnailBounds = emptyMap()
+        onDispose {
+            viewModel.addScreenThumbnailBounds = emptyMap()
         }
-        viewModel.draggedApp = null
-        viewModel.isDraggingActive = false
     }
 
     Box(
@@ -224,29 +190,25 @@ fun AddManagementScreen(
                                                     .pointerInput(app) {
                                                         detectDragGesturesAfterLongPress(
                                                             onDragStart = {
+                                                                // ✅ 只设置拖拽元数据，dragOffset 完全由
+                                                                //    MainActivity 全局 awaitEachGesture 追踪器负责更新
+                                                                //    绝对不能在这里设置 dragOffset，否则与全局追踪器冲突
                                                                 viewModel.draggedApp = app
                                                                 viewModel.isDraggingActive = true
                                                                 viewModel.isDraggingFromDock = false
                                                                 viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
                                                                 viewModel.dragDistance = -1f
-                                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                                    x = itemScreenX + 24f,
-                                                                    y = itemScreenY + 24f
-                                                                )
                                                             },
-                                                            onDragEnd = { handleDragEnd() },
+                                                            onDragEnd = {},   // ✅ 由 MainActivity.handleGlobalDrop 统一处理
                                                             onDragCancel = {
                                                                 viewModel.draggedApp = null
                                                                 viewModel.isDraggingActive = false
                                                             },
-                                                            onDrag = { change, amt ->
+                                                            onDrag = { change, _ ->
+                                                                // ✅ 只消费事件，不更新坐标
+                                                                //    坐标更新由全局追踪器在 Initial pass 完成
                                                                 change.consume()
-                                                                viewModel.dragOffset = viewModel.dragOffset +
-                                                                    androidx.compose.ui.geometry.Offset(
-                                                                        x = amt.x / density,
-                                                                        y = amt.y / density
-                                                                    )
                                                             }
                                                         )
                                                     }
@@ -329,29 +291,21 @@ fun AddManagementScreen(
                                             .pointerInput(widget) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = {
+                                                        // ✅ 同应用图标：只设元数据，不设 dragOffset
                                                         viewModel.draggedApp = AppModel(widget, "WIDGET:$widget", "")
                                                         viewModel.isDraggingActive = true
                                                         viewModel.isDraggingFromDock = false
                                                         viewModel.isDraggingFromDrawer = false
                                                         viewModel.dragSourceIndex = -1
                                                         viewModel.dragDistance = -1f
-                                                        viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                            x = itemScreenX + 100f,
-                                                            y = itemScreenY + 40f
-                                                        )
                                                     },
-                                                    onDragEnd = { handleDragEnd() },
+                                                    onDragEnd = {},
                                                     onDragCancel = {
                                                         viewModel.draggedApp = null
                                                         viewModel.isDraggingActive = false
                                                     },
-                                                    onDrag = { change, amt ->
+                                                    onDrag = { change, _ ->
                                                         change.consume()
-                                                        viewModel.dragOffset = viewModel.dragOffset +
-                                                            androidx.compose.ui.geometry.Offset(
-                                                                x = amt.x / density,
-                                                                y = amt.y / density
-                                                            )
                                                     }
                                                 )
                                             },
@@ -484,8 +438,8 @@ fun AddManagementScreen(
                             val page = homePages[idx]
                             val isCurrentPage = idx == activePageIndex
 
-                            // 判断当前拖拽是否悬停在此缩略图上
-                            val isHovered = isDragging && (thumbnailBounds[idx]?.let { rect ->
+                            // 悬停高亮：读取 viewModel.addScreenThumbnailBounds（与 handleGlobalDrop 共享同一数据源）
+                            val isHovered = isDragging && (viewModel.addScreenThumbnailBounds[idx]?.let { rect ->
                                 dragOffset.x >= rect.left && dragOffset.x <= rect.right &&
                                         dragOffset.y >= rect.top && dragOffset.y <= rect.bottom
                             } ?: false)
@@ -501,7 +455,10 @@ fun AddManagementScreen(
                                         val top = coords.y / density
                                         val w = bounds.size.width / density
                                         val h = bounds.size.height / density
-                                        thumbnailBounds = thumbnailBounds + (idx to RectBounds(left, top, left + w, top + h))
+                                        // ✅ 写入 viewModel.addScreenThumbnailBounds
+                                        //    handleGlobalDrop 里读的就是同一个字段
+                                        viewModel.addScreenThumbnailBounds = viewModel.addScreenThumbnailBounds +
+                                                (idx to RectBounds(left, top, left + w, top + h))
                                     }
                                     .clickable {
                                         viewModel.activePageIndex.value = idx
@@ -650,8 +607,6 @@ fun AddManagementScreen(
         }
 
         // ── 拖拽浮层 Ghost Icon（zIndex 最高，叠加在一切之上）──────────────
-        // isDragging / dragOffset / draggedApp 均为 viewModel 的 mutableStateOf，
-        // 在 Composable 函数体内直接读取即可触发重组，无需 remember/derivedStateOf
         if (isDragging) {
             val densityPx = LocalDensity.current.density
             Box(
