@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -190,7 +192,7 @@ fun AddManagementScreen(
                                                                 viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
                                                                 viewModel.dragDistance = -1f
-                                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                                viewModel.dragOffset = Offset(
                                                                     x = itemScreenX + 26f,
                                                                     y = itemScreenY + 26f
                                                                 )
@@ -202,7 +204,7 @@ fun AddManagementScreen(
                                                             },
                                                             onDrag = { change, dragAmount ->
                                                                 change.consume()
-                                                                viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
+                                                                viewModel.dragOffset = viewModel.dragOffset + Offset(
                                                                     x = dragAmount.x / density,
                                                                     y = dragAmount.y / density
                                                                 )
@@ -300,7 +302,7 @@ fun AddManagementScreen(
                                                         viewModel.isDraggingFromDrawer = false
                                                         viewModel.dragSourceIndex = -1
                                                         viewModel.dragDistance = -1f
-                                                        viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                        viewModel.dragOffset = Offset(
                                                             x = itemScreenX + 100f,
                                                             y = itemScreenY + 40f
                                                         )
@@ -312,7 +314,7 @@ fun AddManagementScreen(
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
-                                                        viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
+                                                        viewModel.dragOffset = viewModel.dragOffset + Offset(
                                                             x = dragAmount.x / density,
                                                             y = dragAmount.y / density
                                                         )
@@ -485,7 +487,7 @@ fun AddManagementScreen(
                                         val h = bounds.size.height / density
                                         viewModel.addScreenThumbnailBounds =
                                             viewModel.addScreenThumbnailBounds +
-                                                    (idx to RectBounds(left, top, left + w, top + h))
+                                                    (idx to Rect(left, top, left + w, top + h))
                                     }
                                     .clickable {
                                         viewModel.activePageIndex.value = idx
@@ -632,7 +634,6 @@ fun AddManagementScreen(
                 }
             }
         }
-        // ✅ Ghost icon 已移除：MainActivity 里的 DragOverlay 统一负责渲染浮层
     }
 }
 

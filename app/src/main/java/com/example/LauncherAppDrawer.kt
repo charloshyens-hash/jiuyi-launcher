@@ -409,7 +409,7 @@ fun LauncherAppDrawer(
                                         val h = bounds.size.height / density
 
                                         // Register current coordinates in map for dropped item targets
-                                        viewModel.drawerThumbnailBounds = viewModel.drawerThumbnailBounds + (idx to RectBounds(left, top, left + w, top + h))
+                                        viewModel.drawerThumbnailBounds = viewModel.drawerThumbnailBounds + (idx to androidx.compose.ui.geometry.Rect(left, top, left + w, top + h))
                                     }
                                     .border(
                                         width = if (isCurrentPage) 2.5.dp else 1.2.dp,
@@ -726,7 +726,7 @@ fun SingleAppsPageGrid(
                             itemScreenY = coords.y / density
                             val w = bounds.size.width / density
                             val h = bounds.size.height / density
-                            viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to RectBounds(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
+                            viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to androidx.compose.ui.geometry.Rect(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
                         }
                 ) {
                     Column(

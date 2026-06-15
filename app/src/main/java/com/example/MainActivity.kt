@@ -706,7 +706,7 @@ fun LauncherHomeScreen(
                                                     val y = coords.y / densityVal
                                                     val w = bounds.size.width / densityVal
                                                     val h = bounds.size.height / densityVal
-                                                    viewModel.homeGridBounds = viewModel.homeGridBounds + (cellIdx to RectBounds(x, y, x + w, y + h))
+                                                    viewModel.homeGridBounds = viewModel.homeGridBounds + (cellIdx to androidx.compose.ui.geometry.Rect(x, y, x + w, y + h))
                                                 },
                                             contentAlignment = Alignment.Center
                                         ) {
