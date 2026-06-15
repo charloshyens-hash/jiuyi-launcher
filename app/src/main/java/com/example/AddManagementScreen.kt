@@ -44,6 +44,8 @@ fun AddManagementScreen(
     themeColor: Color,
     onClose: () -> Unit,
     showToast: (String) -> Unit,
+    // ✅ 修复1：新增 onDrop 参数，由 MainActivity 传入 handleGlobalDrop
+    onDrop: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current.density
@@ -191,28 +193,31 @@ fun AddManagementScreen(
                                                                 viewModel.isDraggingFromDock = false
                                                                 viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
-                                                                viewModel.dragDistance = -1f
+                                                                // ✅ 修复2：初始 dragDistance 设为 0，避免被外层误判为"未开始"
+                                                                viewModel.dragDistance = 0f
                                                                 viewModel.dragOffset = Offset(
                                                                     x = itemScreenX + 26f,
                                                                     y = itemScreenY + 26f
                                                                 )
                                                             },
-                                                            onDragEnd = {},
+                                                            // ✅ 修复3：onDragEnd 主动调用 onDrop，解决外层 awaitEachGesture 无法收到抬手事件的问题
+                                                            onDragEnd = {
+                                                                onDrop()
+                                                            },
                                                             onDragCancel = {
                                                                 viewModel.draggedApp = null
                                                                 viewModel.isDraggingActive = false
                                                             },
                                                             onDrag = { change, dragAmount ->
                                                                 change.consume()
+                                                                // ✅ 修复4：detectDragGesturesAfterLongPress 的 dragAmount 单位是 px，
+                                                                //    需除以 density 转为 dp，与 dragOffset 坐标系保持一致
                                                                 viewModel.dragOffset = viewModel.dragOffset + Offset(
                                                                     x = dragAmount.x / density,
                                                                     y = dragAmount.y / density
                                                                 )
-                                                                if (viewModel.dragDistance == -1f) {
-                                                                    viewModel.dragDistance = 0f
-                                                                } else {
-                                                                    viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) + kotlin.math.abs(dragAmount.y / density)
-                                                                }
+                                                                viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) +
+                                                                        kotlin.math.abs(dragAmount.y / density)
                                                             }
                                                         )
                                                     }
@@ -301,28 +306,30 @@ fun AddManagementScreen(
                                                         viewModel.isDraggingFromDock = false
                                                         viewModel.isDraggingFromDrawer = false
                                                         viewModel.dragSourceIndex = -1
-                                                        viewModel.dragDistance = -1f
+                                                        // ✅ 修复2：同上，dragDistance 初始为 0
+                                                        viewModel.dragDistance = 0f
                                                         viewModel.dragOffset = Offset(
                                                             x = itemScreenX + 100f,
                                                             y = itemScreenY + 40f
                                                         )
                                                     },
-                                                    onDragEnd = {},
+                                                    // ✅ 修复3：onDragEnd 主动调用 onDrop
+                                                    onDragEnd = {
+                                                        onDrop()
+                                                    },
                                                     onDragCancel = {
                                                         viewModel.draggedApp = null
                                                         viewModel.isDraggingActive = false
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
+                                                        // ✅ 修复4：dragAmount 为 px，除以 density 转 dp
                                                         viewModel.dragOffset = viewModel.dragOffset + Offset(
                                                             x = dragAmount.x / density,
                                                             y = dragAmount.y / density
                                                         )
-                                                        if (viewModel.dragDistance == -1f) {
-                                                            viewModel.dragDistance = 0f
-                                                        } else {
-                                                            viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) + kotlin.math.abs(dragAmount.y / density)
-                                                        }
+                                                        viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) +
+                                                                kotlin.math.abs(dragAmount.y / density)
                                                     }
                                                 )
                                             },

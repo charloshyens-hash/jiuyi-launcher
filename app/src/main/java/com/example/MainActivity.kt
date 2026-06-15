@@ -1264,7 +1264,8 @@ fun LauncherHomeScreen(
                 viewModel = viewModel,
                 themeColor = themeColor,
                 onClose = { isAddScreenOpen = false },
-                showToast = showToast
+                showToast = showToast,
+                onDrop = handleGlobalDrop
             )
         }
 
