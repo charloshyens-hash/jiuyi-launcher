@@ -1,6 +1,5 @@
 package com.example
 
-import android.content.Context
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,11 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -54,8 +49,6 @@ fun AddManagementScreen(
     showToast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current.density
 
     val appList by viewModel.appList.collectAsState()
@@ -65,17 +58,17 @@ fun AddManagementScreen(
     val iconPackFilter by viewModel.iconPackFilter.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
-
     var thumbnailGroupIndex by remember { mutableIntStateOf(0) }
     val maxThumbnailsPerGroup = 3
     val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
 
     var thumbnailBounds by remember { mutableStateOf(emptyMap<Int, RectBounds>()) }
 
-    // ── 本地拖拽状态，用于驱动浮层渲染 ──────────────────────────────────
-    val isDragging by remember { derivedStateOf { viewModel.isDraggingActive } }
-    val dragOffsetState by remember { derivedStateOf { viewModel.dragOffset } }
-    val draggedAppState by remember { derivedStateOf { viewModel.draggedApp } }
+    // ── 直接读取 ViewModel 的 mutableStateOf 属性，让 Compose 自动追踪重组 ──
+    // 不要用 remember { derivedStateOf { ... } } 包裹，否则无法建立订阅
+    val isDragging = viewModel.isDraggingActive
+    val dragOffset = viewModel.dragOffset
+    val draggedApp = viewModel.draggedApp
 
     val handleDragEnd: () -> Unit = {
         val dragged = viewModel.draggedApp
@@ -123,6 +116,7 @@ fun AddManagementScreen(
             .windowInsetsPadding(WindowInsets.statusBars)
             .navigationBarsPadding()
     ) {
+
         Column(modifier = Modifier.fillMaxSize()) {
 
             // ── 上方 7/9 区域 ──────────────────────────────────────────────
@@ -148,22 +142,19 @@ fun AddManagementScreen(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(onClick = {
-                        showToast("点击快捷添加或长按图标拖拽到下方目标卡片")
-                    }) {
+                    IconButton(onClick = { showToast("点击快捷添加或长按图标拖拽到下方目标卡片") }) {
                         Icon(imageVector = Icons.Default.Info, contentDescription = "提示", tint = Color.White.copy(alpha = 0.5f))
                     }
                 }
 
-                // 分类 Tab 栏
+                // Tab 栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    val tabNames = listOf("应用程序", "小组件", "我的手机")
-                    tabNames.forEachIndexed { idx, name ->
+                    listOf("应用程序", "小组件", "我的手机").forEachIndexed { idx, name ->
                         val isSelected = selectedTab == idx
                         Column(
                             modifier = Modifier
@@ -190,9 +181,9 @@ fun AddManagementScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Tab 内容区
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedTab) {
+                        // ── Tab 0: 应用程序 ──────────────────────────────
                         0 -> {
                             val itemsPerPage = 16
                             val totalAppPages = maxOf(1, (appList.size + itemsPerPage - 1) / itemsPerPage)
@@ -251,10 +242,11 @@ fun AddManagementScreen(
                                                             },
                                                             onDrag = { change, amt ->
                                                                 change.consume()
-                                                                viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
-                                                                    x = amt.x / density,
-                                                                    y = amt.y / density
-                                                                )
+                                                                viewModel.dragOffset = viewModel.dragOffset +
+                                                                    androidx.compose.ui.geometry.Offset(
+                                                                        x = amt.x / density,
+                                                                        y = amt.y / density
+                                                                    )
                                                             }
                                                         )
                                                     }
@@ -294,13 +286,15 @@ fun AddManagementScreen(
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         repeat(totalAppPages) { idx ->
-                                            val isCurrent = appPagerState.currentPage == idx
                                             Box(
                                                 modifier = Modifier
                                                     .size(6.dp)
                                                     .padding(horizontal = 2.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (isCurrent) themeColor else Color.White.copy(alpha = 0.2f))
+                                                    .background(
+                                                        if (appPagerState.currentPage == idx) themeColor
+                                                        else Color.White.copy(alpha = 0.2f)
+                                                    )
                                             )
                                         }
                                     }
@@ -308,6 +302,7 @@ fun AddManagementScreen(
                             }
                         }
 
+                        // ── Tab 1: 小组件 ────────────────────────────────
                         1 -> {
                             val widgetPresets = listOf("RAM Booster", "Music Cassette", "Quick Tasks", "Power Battery")
                             val widgetScroll = rememberScrollState()
@@ -352,10 +347,11 @@ fun AddManagementScreen(
                                                     },
                                                     onDrag = { change, amt ->
                                                         change.consume()
-                                                        viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
-                                                            x = amt.x / density,
-                                                            y = amt.y / density
-                                                        )
+                                                        viewModel.dragOffset = viewModel.dragOffset +
+                                                            androidx.compose.ui.geometry.Offset(
+                                                                x = amt.x / density,
+                                                                y = amt.y / density
+                                                            )
                                                     }
                                                 )
                                             },
@@ -373,12 +369,10 @@ fun AddManagementScreen(
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(text = widget, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                                 }
-                                                IconButton(
-                                                    onClick = {
-                                                        viewModel.addWidgetToPage(activePageIndex, widget)
-                                                        showToast("已添加 $widget 到当前页")
-                                                    }
-                                                ) {
+                                                IconButton(onClick = {
+                                                    viewModel.addWidgetToPage(activePageIndex, widget)
+                                                    showToast("已添加 $widget 到当前页")
+                                                }) {
                                                     Icon(imageVector = Icons.Default.AddCircle, contentDescription = "添加", tint = themeColor)
                                                 }
                                             }
@@ -394,6 +388,7 @@ fun AddManagementScreen(
                             }
                         }
 
+                        // ── Tab 2: 我的手机 ──────────────────────────────
                         2 -> {
                             val utilsList = listOf(
                                 SystemUtilEntrance("电池状态", Icons.Default.BatteryChargingFull, "查看电量电压指标") { showToast("物理电池温度: ${viewModel.batteryTemperature}°C | 电压: ${viewModel.batteryVoltage}V") },
@@ -421,10 +416,7 @@ fun AddManagementScreen(
                                         shape = RoundedCornerShape(14.dp),
                                         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.12f))
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+                                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(36.dp)
@@ -458,7 +450,7 @@ fun AddManagementScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = if (isDragging) "松手放置到目标主屏幕 ↓" else "主屏幕预览及管理 • 多组滑动翻页",
+                    text = if (isDragging) "↓  松手放置到目标主屏幕  ↓" else "主屏幕预览及管理 • 多组滑动翻页",
                     color = if (isDragging) themeColor else Color.White.copy(alpha = 0.5f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -492,11 +484,11 @@ fun AddManagementScreen(
                             val page = homePages[idx]
                             val isCurrentPage = idx == activePageIndex
 
-                            // ── 检测当前拖拽是否悬停在此缩略图上 ──────────
-                            val isHovered = isDragging && thumbnailBounds[idx]?.let { rect ->
-                                dragOffsetState.x >= rect.left && dragOffsetState.x <= rect.right &&
-                                        dragOffsetState.y >= rect.top && dragOffsetState.y <= rect.bottom
-                            } ?: false
+                            // 判断当前拖拽是否悬停在此缩略图上
+                            val isHovered = isDragging && (thumbnailBounds[idx]?.let { rect ->
+                                dragOffset.x >= rect.left && dragOffset.x <= rect.right &&
+                                        dragOffset.y >= rect.top && dragOffset.y <= rect.bottom
+                            } ?: false)
 
                             Card(
                                 modifier = Modifier
@@ -516,9 +508,9 @@ fun AddManagementScreen(
                                         showToast("已切换到主页 ${idx + 1}")
                                     }
                                     .border(
-                                        width = if (isHovered) 2.dp else if (isCurrentPage) 2.dp else 1.dp,
+                                        width = if (isHovered || isCurrentPage) 2.dp else 1.dp,
                                         color = when {
-                                            isHovered -> themeColor.copy(alpha = 0.9f)
+                                            isHovered -> themeColor
                                             isCurrentPage -> themeColor
                                             else -> Color.White.copy(alpha = 0.15f)
                                         },
@@ -526,7 +518,7 @@ fun AddManagementScreen(
                                     ),
                                 colors = CardDefaults.cardColors(
                                     containerColor = when {
-                                        isHovered -> themeColor.copy(alpha = 0.30f)
+                                        isHovered -> themeColor.copy(alpha = 0.28f)
                                         isCurrentPage -> themeColor.copy(alpha = 0.18f)
                                         else -> Color(0xFF1E1E1E)
                                     }
@@ -542,6 +534,7 @@ fun AddManagementScreen(
                                         verticalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         val realAppsCount = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
+
                                         Text(
                                             text = if (idx == 0) "主屏幕 1" else "主屏幕 ${idx + 1}",
                                             color = Color.White,
@@ -549,22 +542,19 @@ fun AddManagementScreen(
                                             fontWeight = FontWeight.Bold
                                         )
 
-                                        // 悬停时显示放置提示
                                         if (isHovered) {
                                             Icon(
                                                 imageVector = Icons.Default.AddCircle,
                                                 contentDescription = null,
                                                 tint = themeColor,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         } else {
                                             Row(
                                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                if (idx == 0) {
-                                                    Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = themeColor, modifier = Modifier.size(10.dp))
-                                                }
+                                                if (idx == 0) Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = themeColor, modifier = Modifier.size(10.dp))
                                                 if (page.widgets.isNotEmpty()) {
                                                     Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
                                                     Text(text = "${page.widgets.size}", color = Color.Gray, fontSize = 8.sp)
@@ -589,26 +579,21 @@ fun AddManagementScreen(
                                                     imageVector = Icons.Default.ArrowLeft,
                                                     contentDescription = "左移",
                                                     tint = Color.White.copy(alpha = 0.6f),
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .clickable {
-                                                            viewModel.reorderHomePage(idx, idx - 1)
-                                                            showToast("主屏幕已向前移动")
-                                                        }
+                                                    modifier = Modifier.size(16.dp).clickable {
+                                                        viewModel.reorderHomePage(idx, idx - 1)
+                                                        showToast("主屏幕已向前移动")
+                                                    }
                                                 )
                                             }
                                             if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
-                                                val realAppsCount2 = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
                                                     contentDescription = "删除",
                                                     tint = Color.Red.copy(alpha = 0.8f),
-                                                    modifier = Modifier
-                                                        .size(14.dp)
-                                                        .clickable {
-                                                            viewModel.deleteHomePage(idx)
-                                                            showToast("已成功删除空白页")
-                                                        }
+                                                    modifier = Modifier.size(14.dp).clickable {
+                                                        viewModel.deleteHomePage(idx)
+                                                        showToast("已成功删除空白页")
+                                                    }
                                                 )
                                             }
                                             if (idx < homePages.size - 1) {
@@ -616,12 +601,10 @@ fun AddManagementScreen(
                                                     imageVector = Icons.Default.ArrowRight,
                                                     contentDescription = "右移",
                                                     tint = Color.White.copy(alpha = 0.6f),
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .clickable {
-                                                            viewModel.reorderHomePage(idx, idx + 1)
-                                                            showToast("主屏幕已向后移动")
-                                                        }
+                                                    modifier = Modifier.size(16.dp).clickable {
+                                                        viewModel.reorderHomePage(idx, idx + 1)
+                                                        showToast("主屏幕已向后移动")
+                                                    }
                                                 )
                                             }
                                         }
@@ -644,10 +627,7 @@ fun AddManagementScreen(
                                 colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(imageVector = Icons.Default.Add, contentDescription = "新增", tint = themeColor, modifier = Modifier.size(20.dp))
                                         Spacer(modifier = Modifier.height(4.dp))
@@ -658,9 +638,8 @@ fun AddManagementScreen(
                         }
                     }
 
-                    val hasMoreOnRight = (thumbnailGroupIndex + 1) < totalGroups
                     Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                        if (hasMoreOnRight) {
+                        if ((thumbnailGroupIndex + 1) < totalGroups) {
                             IconButton(onClick = { thumbnailGroupIndex++ }) {
                                 Icon(imageVector = Icons.Default.ChevronRight, contentDescription = "右翻", tint = Color.White)
                             }
@@ -670,30 +649,29 @@ fun AddManagementScreen(
             }
         }
 
-        // ── 拖拽浮层 Ghost Icon（叠加在最顶层）─────────────────────────────
+        // ── 拖拽浮层 Ghost Icon（zIndex 最高，叠加在一切之上）──────────────
+        // isDragging / dragOffset / draggedApp 均为 viewModel 的 mutableStateOf，
+        // 在 Composable 函数体内直接读取即可触发重组，无需 remember/derivedStateOf
         if (isDragging) {
-            val app = draggedAppState
-            val offsetDp = dragOffsetState
-
+            val densityPx = LocalDensity.current.density
             Box(
                 modifier = Modifier
                     .zIndex(999f)
                     .offset {
                         IntOffset(
-                            x = (offsetDp.x * density - 28 * density).roundToInt(),
-                            y = (offsetDp.y * density - 28 * density).roundToInt()
+                            x = (dragOffset.x * densityPx - 28 * densityPx).roundToInt(),
+                            y = (dragOffset.y * densityPx - 28 * densityPx).roundToInt()
                         )
                     }
                     .size(56.dp)
                     .shadow(16.dp, RoundedCornerShape(16.dp))
                     .background(Color(0xCC1A1A1A), RoundedCornerShape(16.dp))
-                    .border(1.5.dp, themeColor.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                    .border(1.5.dp, themeColor.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
                     .scale(1.15f),
                 contentAlignment = Alignment.Center
             ) {
-                if (app != null) {
-                    if (app.packageName.startsWith("WIDGET:")) {
-                        // 小组件拖拽浮层：显示组件图标
+                if (draggedApp != null) {
+                    if (draggedApp.packageName.startsWith("WIDGET:")) {
                         Icon(
                             imageVector = Icons.Default.Widgets,
                             contentDescription = null,
@@ -701,9 +679,8 @@ fun AddManagementScreen(
                             modifier = Modifier.size(28.dp)
                         )
                     } else {
-                        // 应用拖拽浮层：显示应用图标
                         IconStylingCard(
-                            app = app,
+                            app = draggedApp,
                             filter = iconPackFilter,
                             themeColor = themeColor,
                             modifier = Modifier.size(40.dp)
