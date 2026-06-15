@@ -1,12 +1,11 @@
 package com.example
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,20 +24,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,12 +57,11 @@ fun AddManagementScreen(
     val maxThumbnailsPerGroup = 3
     val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
 
-    // ── 直接读取 ViewModel 的 mutableStateOf 属性，让 Compose 自动追踪重组 ──
+    // 直接读 ViewModel mutableStateOf 字段，Compose 自动追踪重组
     val isDragging = viewModel.isDraggingActive
     val dragOffset = viewModel.dragOffset
-    val draggedApp = viewModel.draggedApp
 
-    // ── 进入时清空旧缩略图 bounds，离开时也清空，避免跨屏幕污染 ──
+    // 进入时清空旧 bounds，防止跨屏幕坐标污染
     DisposableEffect(Unit) {
         viewModel.addScreenThumbnailBounds = emptyMap()
         onDispose {
@@ -82,16 +76,15 @@ fun AddManagementScreen(
             .windowInsetsPadding(WindowInsets.statusBars)
             .navigationBarsPadding()
     ) {
-
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // ── 上方 7/9 区域 ──────────────────────────────────────────────
+            // ── 上方 7/9 ──────────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .weight(7f)
                     .fillMaxWidth()
             ) {
-                // 顶部标题栏
+                // 标题栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -108,7 +101,7 @@ fun AddManagementScreen(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(onClick = { showToast("点击快捷添加或长按图标拖拽到下方目标卡片") }) {
+                    IconButton(onClick = { showToast("长按图标 → 拖到下方主屏幕缩略图即可放置") }) {
                         Icon(imageVector = Icons.Default.Info, contentDescription = "提示", tint = Color.White.copy(alpha = 0.5f))
                     }
                 }
@@ -149,6 +142,7 @@ fun AddManagementScreen(
 
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedTab) {
+
                         // ── Tab 0: 应用程序 ──────────────────────────────
                         0 -> {
                             val itemsPerPage = 16
@@ -161,8 +155,10 @@ fun AddManagementScreen(
                                     modifier = Modifier.weight(1f)
                                 ) { pageIdx ->
                                     val startIdx = pageIdx * itemsPerPage
-                                    val endIdx = minOf(startIdx + itemsPerPage, appList.size)
-                                    val pageApps = appList.subList(startIdx, endIdx)
+                                    val pageApps = appList.subList(
+                                        startIdx,
+                                        minOf(startIdx + itemsPerPage, appList.size)
+                                    )
 
                                     LazyVerticalGrid(
                                         columns = GridCells.Fixed(4),
@@ -173,8 +169,8 @@ fun AddManagementScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         itemsIndexed(pageApps) { _, app ->
-                                            var itemScreenX by remember { mutableStateOf(0f) }
-                                            var itemScreenY by remember { mutableStateOf(0f) }
+                                            var itemCenterX by remember { mutableStateOf(0f) }
+                                            var itemCenterY by remember { mutableStateOf(0f) }
 
                                             Column(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -184,37 +180,32 @@ fun AddManagementScreen(
                                                     .height(80.dp)
                                                     .onGloballyPositioned { bounds ->
                                                         val coords = bounds.positionInWindow()
-                                                        itemScreenX = coords.x / density
-                                                        itemScreenY = coords.y / density
+                                                        itemCenterX = coords.x / density + bounds.size.width / density / 2f
+                                                        itemCenterY = coords.y / density + bounds.size.height / density / 2f
                                                     }
+                                                    // ✅ 用 detectTapGestures onLongPress 触发拖拽开始
+                                                    //    后续坐标完全由 MainActivity 全局 awaitEachGesture 追踪
+                                                    //    不能用 detectDragGesturesAfterLongPress：其 onDrag 会被
+                                                    //    MainActivity Initial pass 的 consume() 饿死
                                                     .pointerInput(app) {
-                                                        detectDragGesturesAfterLongPress(
-                                                            onDragStart = {
-                                                                // ✅ 只设置拖拽元数据，dragOffset 完全由
-                                                                //    MainActivity 全局 awaitEachGesture 追踪器负责更新
-                                                                //    绝对不能在这里设置 dragOffset，否则与全局追踪器冲突
+                                                        detectTapGestures(
+                                                            onLongPress = {
                                                                 viewModel.draggedApp = app
                                                                 viewModel.isDraggingActive = true
                                                                 viewModel.isDraggingFromDock = false
                                                                 viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
                                                                 viewModel.dragDistance = -1f
+                                                                // 初始坐标设为图标中心，全局追踪器接管后会立刻更新
+                                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                                    itemCenterX, itemCenterY
+                                                                )
                                                             },
-                                                            onDragEnd = {},   // ✅ 由 MainActivity.handleGlobalDrop 统一处理
-                                                            onDragCancel = {
-                                                                viewModel.draggedApp = null
-                                                                viewModel.isDraggingActive = false
-                                                            },
-                                                            onDrag = { change, _ ->
-                                                                // ✅ 只消费事件，不更新坐标
-                                                                //    坐标更新由全局追踪器在 Initial pass 完成
-                                                                change.consume()
+                                                            onTap = {
+                                                                viewModel.addAppToPage(activePageIndex, app.packageName)
+                                                                showToast("已添加：${app.label}")
                                                             }
                                                         )
-                                                    }
-                                                    .clickable {
-                                                        viewModel.addAppToPage(activePageIndex, app.packageName)
-                                                        showToast("添加快捷方式：${app.label}")
                                                     }
                                             ) {
                                                 IconStylingCard(
@@ -240,6 +231,7 @@ fun AddManagementScreen(
                                     }
                                 }
 
+                                // 分页点
                                 if (totalAppPages > 1) {
                                     Row(
                                         modifier = Modifier
@@ -277,35 +269,30 @@ fun AddManagementScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 widgetPresets.forEach { widget ->
-                                    var itemScreenX by remember { mutableStateOf(0f) }
-                                    var itemScreenY by remember { mutableStateOf(0f) }
+                                    var itemCenterX by remember { mutableStateOf(0f) }
+                                    var itemCenterY by remember { mutableStateOf(0f) }
 
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .onGloballyPositioned { bounds ->
                                                 val coords = bounds.positionInWindow()
-                                                itemScreenX = coords.x / density
-                                                itemScreenY = coords.y / density
+                                                itemCenterX = coords.x / density + bounds.size.width / density / 2f
+                                                itemCenterY = coords.y / density + bounds.size.height / density / 2f
                                             }
+                                            // ✅ 同 Tab0：onLongPress 触发，不用 detectDragGesturesAfterLongPress
                                             .pointerInput(widget) {
-                                                detectDragGesturesAfterLongPress(
-                                                    onDragStart = {
-                                                        // ✅ 同应用图标：只设元数据，不设 dragOffset
+                                                detectTapGestures(
+                                                    onLongPress = {
                                                         viewModel.draggedApp = AppModel(widget, "WIDGET:$widget", "")
                                                         viewModel.isDraggingActive = true
                                                         viewModel.isDraggingFromDock = false
                                                         viewModel.isDraggingFromDrawer = false
                                                         viewModel.dragSourceIndex = -1
                                                         viewModel.dragDistance = -1f
-                                                    },
-                                                    onDragEnd = {},
-                                                    onDragCancel = {
-                                                        viewModel.draggedApp = null
-                                                        viewModel.isDraggingActive = false
-                                                    },
-                                                    onDrag = { change, _ ->
-                                                        change.consume()
+                                                        viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                            itemCenterX, itemCenterY
+                                                        )
                                                     }
                                                 )
                                             },
@@ -332,7 +319,7 @@ fun AddManagementScreen(
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = "长按此卡片并拖拽到下方目标卡片进行放置，或点击右上角直接置入当前页",
+                                                text = "长按此卡片拖拽到下方目标缩略图，或点击右上角直接置入当前页",
                                                 color = Color.White.copy(alpha = 0.45f),
                                                 fontSize = 11.sp
                                             )
@@ -345,13 +332,27 @@ fun AddManagementScreen(
                         // ── Tab 2: 我的手机 ──────────────────────────────
                         2 -> {
                             val utilsList = listOf(
-                                SystemUtilEntrance("电池状态", Icons.Default.BatteryChargingFull, "查看电量电压指标") { showToast("物理电池温度: ${viewModel.batteryTemperature}°C | 电压: ${viewModel.batteryVoltage}V") },
-                                SystemUtilEntrance("存储管理", Icons.Default.Storage, "清理垃圾缓存文件") { showToast("系统可用存储: ${String.format("%.1f", viewModel.realFreeStorageGb)} GB / ${String.format("%.1f", viewModel.realTotalStorageGb)} GB") },
-                                SystemUtilEntrance("网络速率", Icons.Default.Wifi, "测试通信延迟丢包") { showToast("实时基站连接状态正常，测速延迟: ${viewModel.networkPingMs}ms") },
-                                SystemUtilEntrance("一键加速", Icons.Default.Cyclone, "彻底释放运行内存") { viewModel.boostRam() },
-                                SystemUtilEntrance("文件管理器", Icons.Default.FolderOpen, "组织并管理历史目录") { showToast("正在打开本地资源管家...") },
-                                SystemUtilEntrance("桌面设置", Icons.Default.Settings, "配置指示器与图标样式") { showToast("请关闭此卡片返回并点击轻手势「设置」") },
-                                SystemUtilEntrance("个性主题", Icons.Default.Palette, "全局变色与壁纸匹配") { showToast("个性设置中心已开启，可在桌面设置切换") }
+                                SystemUtilEntrance("电池状态", Icons.Default.BatteryChargingFull, "查看电量电压指标") {
+                                    showToast("电池温度: ${viewModel.batteryTemperature}°C | 电压: ${viewModel.batteryVoltage}V")
+                                },
+                                SystemUtilEntrance("存储管理", Icons.Default.Storage, "清理垃圾缓存文件") {
+                                    showToast("可用: ${String.format("%.1f", viewModel.realFreeStorageGb)} GB / ${String.format("%.1f", viewModel.realTotalStorageGb)} GB")
+                                },
+                                SystemUtilEntrance("网络速率", Icons.Default.Wifi, "测试通信延迟丢包") {
+                                    showToast("基站连接正常，延迟: ${viewModel.networkPingMs}ms")
+                                },
+                                SystemUtilEntrance("一键加速", Icons.Default.Cyclone, "释放运行内存") {
+                                    viewModel.boostRam()
+                                },
+                                SystemUtilEntrance("文件管理器", Icons.Default.FolderOpen, "组织并管理历史目录") {
+                                    showToast("正在打开本地资源管家...")
+                                },
+                                SystemUtilEntrance("桌面设置", Icons.Default.Settings, "配置指示器与图标样式") {
+                                    showToast("请关闭此面板后点击轻手势「设置」")
+                                },
+                                SystemUtilEntrance("个性主题", Icons.Default.Palette, "全局变色与壁纸匹配") {
+                                    showToast("个性设置已开启，可在桌面设置中切换")
+                                }
                             )
 
                             LazyVerticalGrid(
@@ -393,7 +394,7 @@ fun AddManagementScreen(
                 }
             }
 
-            // ── 下方 2/9 区域：主屏幕缩略图目标区 ────────────────────────
+            // ── 下方 2/9：主屏幕缩略图目标区 ─────────────────────────────
             Column(
                 modifier = Modifier
                     .weight(2f)
@@ -438,7 +439,7 @@ fun AddManagementScreen(
                             val page = homePages[idx]
                             val isCurrentPage = idx == activePageIndex
 
-                            // 悬停高亮：读取 viewModel.addScreenThumbnailBounds（与 handleGlobalDrop 共享同一数据源）
+                            // 悬停高亮：从 viewModel.addScreenThumbnailBounds 读取
                             val isHovered = isDragging && (viewModel.addScreenThumbnailBounds[idx]?.let { rect ->
                                 dragOffset.x >= rect.left && dragOffset.x <= rect.right &&
                                         dragOffset.y >= rect.top && dragOffset.y <= rect.bottom
@@ -455,10 +456,11 @@ fun AddManagementScreen(
                                         val top = coords.y / density
                                         val w = bounds.size.width / density
                                         val h = bounds.size.height / density
-                                        // ✅ 写入 viewModel.addScreenThumbnailBounds
-                                        //    handleGlobalDrop 里读的就是同一个字段
-                                        viewModel.addScreenThumbnailBounds = viewModel.addScreenThumbnailBounds +
-                                                (idx to RectBounds(left, top, left + w, top + h))
+                                        // ✅ 写 viewModel.addScreenThumbnailBounds
+                                        //    handleGlobalDrop 读的就是这个字段
+                                        viewModel.addScreenThumbnailBounds =
+                                            viewModel.addScreenThumbnailBounds +
+                                                    (idx to RectBounds(left, top, left + w, top + h))
                                     }
                                     .clickable {
                                         viewModel.activePageIndex.value = idx
@@ -605,45 +607,7 @@ fun AddManagementScreen(
                 }
             }
         }
-
-        // ── 拖拽浮层 Ghost Icon（zIndex 最高，叠加在一切之上）──────────────
-        if (isDragging) {
-            val densityPx = LocalDensity.current.density
-            Box(
-                modifier = Modifier
-                    .zIndex(999f)
-                    .offset {
-                        IntOffset(
-                            x = (dragOffset.x * densityPx - 28 * densityPx).roundToInt(),
-                            y = (dragOffset.y * densityPx - 28 * densityPx).roundToInt()
-                        )
-                    }
-                    .size(56.dp)
-                    .shadow(16.dp, RoundedCornerShape(16.dp))
-                    .background(Color(0xCC1A1A1A), RoundedCornerShape(16.dp))
-                    .border(1.5.dp, themeColor.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
-                    .scale(1.15f),
-                contentAlignment = Alignment.Center
-            ) {
-                if (draggedApp != null) {
-                    if (draggedApp.packageName.startsWith("WIDGET:")) {
-                        Icon(
-                            imageVector = Icons.Default.Widgets,
-                            contentDescription = null,
-                            tint = themeColor,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    } else {
-                        IconStylingCard(
-                            app = draggedApp,
-                            filter = iconPackFilter,
-                            themeColor = themeColor,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
-                }
-            }
-        }
+        // ✅ Ghost icon 已移除：MainActivity 里的 DragOverlay 统一负责渲染浮层
     }
 }
 
