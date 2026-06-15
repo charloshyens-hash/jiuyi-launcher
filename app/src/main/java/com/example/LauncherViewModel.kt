@@ -705,6 +705,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     var isDraggingFromDock by mutableStateOf(false)
     var isDraggingFromDrawer by mutableStateOf(false)
     var drawerThumbnailBounds by mutableStateOf(emptyMap<Int, RectBounds>())
+    var addScreenThumbnailBounds by mutableStateOf(emptyMap<Int, RectBounds>())
     var dragSourceIndex by mutableStateOf(-1)
 
     var drawerItemBounds by mutableStateOf<Map<Int, RectBounds>>(emptyMap())

@@ -26,6 +26,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -35,10 +37,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,32 +58,31 @@ fun AddManagementScreen(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current.density
 
-    // States from state flows
     val appList by viewModel.appList.collectAsState()
     val homePages by viewModel.homePages.collectAsState()
     val activePageIndex by viewModel.activePageIndex.collectAsState()
     val showLabels by viewModel.showLabels.collectAsState()
     val iconPackFilter by viewModel.iconPackFilter.collectAsState()
 
-    // 7/9 Upper screen tab selection state
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Applications, 1: Widgets, 2: My Phone
+    var selectedTab by remember { mutableIntStateOf(0) }
 
-    // Grouping home page thumbnails (3 per group)
     var thumbnailGroupIndex by remember { mutableIntStateOf(0) }
     val maxThumbnailsPerGroup = 3
     val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
 
-    // Map to keep track of pixel bounding boxes of thumbnails for drag targets
     var thumbnailBounds by remember { mutableStateOf(emptyMap<Int, RectBounds>()) }
 
-    // Floating action for Drag and Drop overlay checking
+    // ── 本地拖拽状态，用于驱动浮层渲染 ──────────────────────────────────
+    val isDragging by remember { derivedStateOf { viewModel.isDraggingActive } }
+    val dragOffsetState by remember { derivedStateOf { viewModel.dragOffset } }
+    val draggedAppState by remember { derivedStateOf { viewModel.draggedApp } }
+
     val handleDragEnd: () -> Unit = {
         val dragged = viewModel.draggedApp
         if (dragged != null) {
             val offset = viewModel.dragOffset
             var droppedOnThumbnailIndex: Int? = null
 
-            // Find if dropped coordinates fall inside any thumbnail
             for ((index, rect) in thumbnailBounds) {
                 if (offset.x >= rect.left && offset.x <= rect.right &&
                     offset.y >= rect.top && offset.y <= rect.bottom
@@ -98,7 +102,6 @@ fun AddManagementScreen(
                     showToast("已添加快捷方式 ${dragged.label} 到第 ${droppedOnThumbnailIndex + 1} 页")
                 }
             } else {
-                // Default: add to active page if dropped outside
                 if (dragged.packageName.startsWith("WIDGET:")) {
                     val widgetName = dragged.packageName.substring(7)
                     viewModel.addWidgetToPage(activePageIndex, widgetName)
@@ -116,19 +119,19 @@ fun AddManagementScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xE6131313)) // 90% Matte Translucent Background
+            .background(Color(0xE6131313))
             .windowInsetsPadding(WindowInsets.statusBars)
             .navigationBarsPadding()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            
-            // ── Upper area (7/9 Height) ──────────────────────────────────────
+
+            // ── 上方 7/9 区域 ──────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .weight(7f)
                     .fillMaxWidth()
             ) {
-                // Elegant Top bar header
+                // 顶部标题栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -145,7 +148,6 @@ fun AddManagementScreen(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    // Informative help tips icon
                     IconButton(onClick = {
                         showToast("点击快捷添加或长按图标拖拽到下方目标卡片")
                     }) {
@@ -153,7 +155,7 @@ fun AddManagementScreen(
                     }
                 }
 
-                // Category Tabs Bar (应用程序, 小组件, 我的手机)
+                // 分类 Tab 栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -188,11 +190,10 @@ fun AddManagementScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Content of selected tab
+                // Tab 内容区
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedTab) {
                         0 -> {
-                            // ── Grid of 4 columns x 4 rows = 16 apps per page ────
                             val itemsPerPage = 16
                             val totalAppPages = maxOf(1, (appList.size + itemsPerPage - 1) / itemsPerPage)
                             val appPagerState = rememberPagerState(pageCount = { totalAppPages })
@@ -235,7 +236,9 @@ fun AddManagementScreen(
                                                                 viewModel.draggedApp = app
                                                                 viewModel.isDraggingActive = true
                                                                 viewModel.isDraggingFromDock = false
+                                                                viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
+                                                                viewModel.dragDistance = -1f
                                                                 viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
                                                                     x = itemScreenX + 24f,
                                                                     y = itemScreenY + 24f
@@ -256,7 +259,6 @@ fun AddManagementScreen(
                                                         )
                                                     }
                                                     .clickable {
-                                                        // Fallback single tap: instantly adds shortcut to currently active page
                                                         viewModel.addAppToPage(activePageIndex, app.packageName)
                                                         showToast("添加快捷方式：${app.label}")
                                                     }
@@ -284,7 +286,6 @@ fun AddManagementScreen(
                                     }
                                 }
 
-                                // Interactive App list dots indicator
                                 if (totalAppPages > 1) {
                                     Row(
                                         modifier = Modifier
@@ -306,8 +307,8 @@ fun AddManagementScreen(
                                 }
                             }
                         }
+
                         1 -> {
-                            // ── Pager for system widgets ────────────────────
                             val widgetPresets = listOf("RAM Booster", "Music Cassette", "Quick Tasks", "Power Battery")
                             val widgetScroll = rememberScrollState()
 
@@ -333,11 +334,12 @@ fun AddManagementScreen(
                                             .pointerInput(widget) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = {
-                                                        // Represent dragged widget via pre-formatted AppModel package code
                                                         viewModel.draggedApp = AppModel(widget, "WIDGET:$widget", "")
                                                         viewModel.isDraggingActive = true
                                                         viewModel.isDraggingFromDock = false
+                                                        viewModel.isDraggingFromDrawer = false
                                                         viewModel.dragSourceIndex = -1
+                                                        viewModel.dragDistance = -1f
                                                         viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
                                                             x = itemScreenX + 100f,
                                                             y = itemScreenY + 40f
@@ -391,8 +393,8 @@ fun AddManagementScreen(
                                 }
                             }
                         }
+
                         2 -> {
-                            // ── System shortcuts dashboard (My Phone) ────────
                             val utilsList = listOf(
                                 SystemUtilEntrance("电池状态", Icons.Default.BatteryChargingFull, "查看电量电压指标") { showToast("物理电池温度: ${viewModel.batteryTemperature}°C | 电压: ${viewModel.batteryVoltage}V") },
                                 SystemUtilEntrance("存储管理", Icons.Default.Storage, "清理垃圾缓存文件") { showToast("系统可用存储: ${String.format("%.1f", viewModel.realFreeStorageGb)} GB / ${String.format("%.1f", viewModel.realTotalStorageGb)} GB") },
@@ -445,25 +447,24 @@ fun AddManagementScreen(
                 }
             }
 
-            // ── Lower Area (2/9 Height) ──────────────────────────────────
+            // ── 下方 2/9 区域：主屏幕缩略图目标区 ────────────────────────
             Column(
                 modifier = Modifier
                     .weight(2f)
                     .fillMaxWidth()
-                    .background(Color(0xFF0C0C0C)) // Contrast deep bar below
+                    .background(Color(0xFF0C0C0C))
                     .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)))
                     .padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "主屏幕预览及管理 • 多组滑动翻页",
-                    color = Color.White.copy(alpha = 0.5f),
+                    text = if (isDragging) "松手放置到目标主屏幕 ↓" else "主屏幕预览及管理 • 多组滑动翻页",
+                    color = if (isDragging) themeColor else Color.White.copy(alpha = 0.5f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
 
-                // Row content: Displays 3 thumbnails per group
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -471,7 +472,6 @@ fun AddManagementScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left navigate group arrow if applicable
                     Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                         if (thumbnailGroupIndex > 0) {
                             IconButton(onClick = { thumbnailGroupIndex-- }) {
@@ -480,10 +480,8 @@ fun AddManagementScreen(
                         }
                     }
 
-                    // Main 3 thumbnails section
                     Row(
-                        modifier = Modifier
-                            .weight(1f),
+                        modifier = Modifier.weight(1f),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -494,23 +492,23 @@ fun AddManagementScreen(
                             val page = homePages[idx]
                             val isCurrentPage = idx == activePageIndex
 
-                            var thumbLeft by remember { mutableFloatStateOf(0f) }
-                            var thumbTop by remember { mutableFloatStateOf(0f) }
-                            var thumbWidth by remember { mutableFloatStateOf(0f) }
-                            var thumbHeight by remember { mutableFloatStateOf(0f) }
+                            // ── 检测当前拖拽是否悬停在此缩略图上 ──────────
+                            val isHovered = isDragging && thumbnailBounds[idx]?.let { rect ->
+                                dragOffsetState.x >= rect.left && dragOffsetState.x <= rect.right &&
+                                        dragOffsetState.y >= rect.top && dragOffsetState.y <= rect.bottom
+                            } ?: false
 
                             Card(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(100.dp)
+                                    .scale(if (isHovered) 1.06f else 1f)
                                     .onGloballyPositioned { bounds ->
                                         val coords = bounds.positionInWindow()
                                         val left = coords.x / density
                                         val top = coords.y / density
                                         val w = bounds.size.width / density
                                         val h = bounds.size.height / density
-
-                                        // Register current coordinates in map for dropped item targets
                                         thumbnailBounds = thumbnailBounds + (idx to RectBounds(left, top, left + w, top + h))
                                     }
                                     .clickable {
@@ -518,17 +516,24 @@ fun AddManagementScreen(
                                         showToast("已切换到主页 ${idx + 1}")
                                     }
                                     .border(
-                                        width = if (isCurrentPage) 2.dp else 1.dp,
-                                        color = if (isCurrentPage) themeColor else Color.White.copy(alpha = 0.15f),
+                                        width = if (isHovered) 2.dp else if (isCurrentPage) 2.dp else 1.dp,
+                                        color = when {
+                                            isHovered -> themeColor.copy(alpha = 0.9f)
+                                            isCurrentPage -> themeColor
+                                            else -> Color.White.copy(alpha = 0.15f)
+                                        },
                                         shape = RoundedCornerShape(8.dp)
                                     ),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isCurrentPage) themeColor.copy(alpha = 0.18f) else Color(0xFF1E1E1E)
+                                    containerColor = when {
+                                        isHovered -> themeColor.copy(alpha = 0.30f)
+                                        isCurrentPage -> themeColor.copy(alpha = 0.18f)
+                                        else -> Color(0xFF1E1E1E)
+                                    }
                                 ),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Box(modifier = Modifier.fillMaxSize()) {
-                                    // Thumbnail miniature information
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -544,36 +549,41 @@ fun AddManagementScreen(
                                             fontWeight = FontWeight.Bold
                                         )
 
-                                        // Representation icons/items
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            // Render visual details of shortcut count
-                                            if (idx == 0) {
-                                                Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = themeColor, modifier = Modifier.size(10.dp))
-                                            }
-                                            if (page.widgets.isNotEmpty()) {
-                                                Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
-                                                Text(text = "${page.widgets.size}", color = Color.Gray, fontSize = 8.sp)
-                                            }
-
-                                            if (realAppsCount > 0) {
-                                                Icon(imageVector = Icons.Default.Apps, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
-                                                Text(text = "$realAppsCount", color = Color.Gray, fontSize = 8.sp)
-                                            }
-                                            if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
-                                                Text(text = "空白页", color = Color.Gray, fontSize = 8.sp)
+                                        // 悬停时显示放置提示
+                                        if (isHovered) {
+                                            Icon(
+                                                imageVector = Icons.Default.AddCircle,
+                                                contentDescription = null,
+                                                tint = themeColor,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        } else {
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                if (idx == 0) {
+                                                    Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = themeColor, modifier = Modifier.size(10.dp))
+                                                }
+                                                if (page.widgets.isNotEmpty()) {
+                                                    Icon(imageVector = Icons.Default.Widgets, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
+                                                    Text(text = "${page.widgets.size}", color = Color.Gray, fontSize = 8.sp)
+                                                }
+                                                if (realAppsCount > 0) {
+                                                    Icon(imageVector = Icons.Default.Apps, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(10.dp))
+                                                    Text(text = "$realAppsCount", color = Color.Gray, fontSize = 8.sp)
+                                                }
+                                                if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
+                                                    Text(text = "空白页", color = Color.Gray, fontSize = 8.sp)
+                                                }
                                             }
                                         }
 
-                                        // Left/Right reorder navigation triggers or removal buttons inside thumbnail
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceEvenly,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Move left
                                             if (idx > 0) {
                                                 Icon(
                                                     imageVector = Icons.Default.ArrowLeft,
@@ -587,9 +597,8 @@ fun AddManagementScreen(
                                                         }
                                                 )
                                             }
-                                            
-                                            // Delete Page if blank (except main first page)
                                             if (idx > 0 && realAppsCount == 0 && page.widgets.isEmpty()) {
+                                                val realAppsCount2 = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
                                                     contentDescription = "删除",
@@ -602,8 +611,6 @@ fun AddManagementScreen(
                                                         }
                                                 )
                                             }
-
-                                            // Move right
                                             if (idx < homePages.size - 1) {
                                                 Icon(
                                                     imageVector = Icons.Default.ArrowRight,
@@ -623,7 +630,6 @@ fun AddManagementScreen(
                             }
                         }
 
-                        // Display "+" blank thumbnail if we are at the end of groups
                         val isLastGroup = (thumbnailGroupIndex + 1) == totalGroups || totalGroups == 0
                         if (isLastGroup && homePages.size < 20) {
                             Card(
@@ -652,7 +658,6 @@ fun AddManagementScreen(
                         }
                     }
 
-                    // Right navigate group arrow or indicator if pages exceed group range
                     val hasMoreOnRight = (thumbnailGroupIndex + 1) < totalGroups
                     Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                         if (hasMoreOnRight) {
@@ -660,6 +665,49 @@ fun AddManagementScreen(
                                 Icon(imageVector = Icons.Default.ChevronRight, contentDescription = "右翻", tint = Color.White)
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // ── 拖拽浮层 Ghost Icon（叠加在最顶层）─────────────────────────────
+        if (isDragging) {
+            val app = draggedAppState
+            val offsetDp = dragOffsetState
+
+            Box(
+                modifier = Modifier
+                    .zIndex(999f)
+                    .offset {
+                        IntOffset(
+                            x = (offsetDp.x * density - 28 * density).roundToInt(),
+                            y = (offsetDp.y * density - 28 * density).roundToInt()
+                        )
+                    }
+                    .size(56.dp)
+                    .shadow(16.dp, RoundedCornerShape(16.dp))
+                    .background(Color(0xCC1A1A1A), RoundedCornerShape(16.dp))
+                    .border(1.5.dp, themeColor.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                    .scale(1.15f),
+                contentAlignment = Alignment.Center
+            ) {
+                if (app != null) {
+                    if (app.packageName.startsWith("WIDGET:")) {
+                        // 小组件拖拽浮层：显示组件图标
+                        Icon(
+                            imageVector = Icons.Default.Widgets,
+                            contentDescription = null,
+                            tint = themeColor,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    } else {
+                        // 应用拖拽浮层：显示应用图标
+                        IconStylingCard(
+                            app = app,
+                            filter = iconPackFilter,
+                            themeColor = themeColor,
+                            modifier = Modifier.size(40.dp)
+                        )
                     }
                 }
             }
@@ -672,11 +720,4 @@ private data class SystemUtilEntrance(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val desc: String,
     val action: () -> Unit
-)
-
-data class RectBounds(
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float
 )

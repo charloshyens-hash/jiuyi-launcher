@@ -86,7 +86,6 @@ class MainActivity : ComponentActivity() {
 
         viewModel.onUninstallResult(pkg, success)
 
-        // 只在真正卸载成功时提示，取消/失败时静默
         if (success) {
             Toast.makeText(this, "卸载成功", Toast.LENGTH_SHORT).show()
         }
@@ -161,7 +160,7 @@ class MainActivity : ComponentActivity() {
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                     JiuYiMediaService.requestRefresh()
                 }, 200)
-            }
+        }
         } catch (e: Exception) {}
     }
 
@@ -227,7 +226,6 @@ fun LauncherHomeScreen(
     val homePages by viewModel.homePages.collectAsState()
     val activePageIndex by viewModel.activePageIndex.collectAsState()
 
-    // ── 记录拖拽开始时的源页索引，用于跨页拖拽判断 ──────────────────────
     var dragSourcePageIndex by remember { mutableStateOf(0) }
 
     val appDrawerOffset by animateDpAsState(
@@ -256,7 +254,30 @@ fun LauncherHomeScreen(
             val dropX = viewModel.dragOffset.x
             val dropY = viewModel.dragOffset.y
 
-            if (viewModel.isDraggingFromDrawer) {
+            if (isAddScreenOpen) {
+                var droppedOnThumbnailIndex: Int? = null
+                for ((index, rect) in viewModel.addScreenThumbnailBounds) {
+                    if (dropX >= rect.left && dropX <= rect.right &&
+                        dropY >= rect.top && dropY <= rect.bottom
+                    ) {
+                        droppedOnThumbnailIndex = index
+                        break
+                    }
+                }
+
+                if (droppedOnThumbnailIndex != null) {
+                    if (app.packageName.startsWith("WIDGET:")) {
+                        val widgetName = app.packageName.substring(7)
+                        viewModel.addWidgetToPage(droppedOnThumbnailIndex, widgetName)
+                        showToast("已成功添加 $widgetName 到第 ${droppedOnThumbnailIndex + 1} 页")
+                    } else {
+                        viewModel.addAppToPage(droppedOnThumbnailIndex, app.packageName)
+                        showToast("已成功添加快捷方式 ${app.label} 到第 ${droppedOnThumbnailIndex + 1} 页")
+                    }
+                }
+                viewModel.draggedApp = null
+                viewModel.isDraggingActive = false
+            } else if (viewModel.isDraggingFromDrawer) {
                 var droppedOnPage: Int? = null
                 for ((idx, rect) in viewModel.drawerThumbnailBounds) {
                     if (dropX >= rect.left && dropX <= rect.right &&
@@ -364,7 +385,6 @@ fun LauncherHomeScreen(
                         viewModel.updateDockConfiguration(currentDockList)
                         showToast("已调整 Dock 快捷排列")
                     } else {
-                        // ── 主屏幕放置逻辑（含跨页拖拽）──────────────────────────────
                         var targetSlotIndex: Int? = null
                         for ((cellIdx, rect) in viewModel.homeGridBounds) {
                             if (dropX >= rect.left && dropX <= rect.right &&
@@ -392,13 +412,11 @@ fun LauncherHomeScreen(
                         }
 
                         val currentActivePageIdx = viewModel.activePageIndex.value
-                        // ── [改动2] 判断是否发生了跨页：当前激活页 ≠ 拖拽开始时的源页 ──
                         val isCrossPage = !viewModel.isDraggingFromDock &&
                                 currentActivePageIdx != dragSourcePageIndex
 
                         if (targetSlotIndex != null) {
                             if (viewModel.isDraggingFromDock) {
-                                // Dock → 主屏某 slot（不涉及跨页）
                                 val currentDockList = dockPackages.toMutableList()
                                 if (viewModel.dragSourceIndex in currentDockList.indices) {
                                     currentDockList.removeAt(viewModel.dragSourceIndex)
@@ -407,19 +425,16 @@ fun LauncherHomeScreen(
                                 viewModel.addAppToPageAtSlot(currentActivePageIdx, app.packageName, targetSlotIndex)
                                 showToast("已将 ${app.label} 移至桌面指定位置")
                             } else if (isCrossPage) {
-                                // 跨页拖拽：从源页移除，放到目标页的指定 slot
                                 viewModel.removeAppFromPage(dragSourcePageIndex, app.packageName)
                                 viewModel.addAppToPageAtSlot(currentActivePageIdx, app.packageName, targetSlotIndex)
                                 showToast("已将 ${app.label} 移至第 ${currentActivePageIdx + 1} 页")
                             } else {
-                                // 同页内自由位置移动（原有逻辑）
                                 if (viewModel.dragSourceIndex != -1) {
                                     viewModel.moveAppInPage(currentActivePageIdx, viewModel.dragSourceIndex, targetSlotIndex)
                                     showToast("已调整 ${app.label} 的位置")
                                 }
                             }
                         } else {
-                            // 没有命中任何 slot
                             if (viewModel.isDraggingFromDock) {
                                 if (app.packageName == "MENU_BUTTON") {
                                     showToast("菜单按钮不能移除！")
@@ -432,7 +447,6 @@ fun LauncherHomeScreen(
                                     showToast("已从 Dock 移除: ${app.label}")
                                 }
                             } else if (isCrossPage) {
-                                // 跨页但没有 slot：追加到目标页末尾
                                 viewModel.removeAppFromPage(dragSourcePageIndex, app.packageName)
                                 viewModel.addAppToPage(currentActivePageIdx, app.packageName)
                                 showToast("已将 ${app.label} 移至第 ${currentActivePageIdx + 1} 页")
@@ -542,7 +556,6 @@ fun LauncherHomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // ── [改动1-a] 长按触发手势面板：拖拽中不触发 ──────────────────
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = {
@@ -552,20 +565,27 @@ fun LauncherHomeScreen(
                         }
                     )
                 }
-                // ── [改动1-b] 上滑触发手势面板：拖拽中不触发 ──────────────────
+                // ── 修复：上滑触发手势面板，拖拽中不触发；消费事件避免穿透到 verticalScroll ──
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        val startX = down.position.x
                         val startY = down.position.y
                         var isTriggered = false
                         do {
                             val event = awaitPointerEvent()
                             val pointerChange = event.changes.firstOrNull()
-                            if (pointerChange != null) {
+                            if (pointerChange != null && !viewModel.isDraggingActive) {
+                                val dragX = pointerChange.position.x - startX
                                 val dragY = pointerChange.position.y - startY
-                                if (dragY < -60f && !isTriggered && !viewModel.isDraggingActive) {
+                                // 垂直向上滑动距离需大于 100 且明显大于水平滑动距离，以防左右翻页时误触
+                                if (dragY < -100f && kotlin.math.abs(dragY) > kotlin.math.abs(dragX) * 1.8f && !isTriggered) {
                                     isGesturePanelOpen = true
                                     isTriggered = true
+                                    // 消费后续所有事件，阻断向下传播给任何滚动容器
+                                    pointerChange.consume()
+                                }
+                                if (isTriggered) {
                                     pointerChange.consume()
                                 }
                             }
@@ -594,20 +614,18 @@ fun LauncherHomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
-                    .padding(bottom = 120.dp)
+                    .padding(bottom = 140.dp)
             ) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.weight(1f)
                 ) { idx ->
                     val page = homePages.getOrNull(idx) ?: HomeScreenPage(idx.toString())
-                    val scrollState = rememberScrollState()
+                    // ── 修复核心：移除 verticalScroll，改为不可滚动的固定 Column ──────
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrollState),
+                        modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.Top
                     ) {
                         if (idx == 0) {
                             LauncherClock(
@@ -651,6 +669,8 @@ fun LauncherHomeScreen(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
 
                         val pageAppsList = page.apps.toMutableList()
                         while (pageAppsList.size < 24) {
@@ -720,7 +740,6 @@ fun LauncherHomeScreen(
                                                                     showShortCutMenu = true
                                                                     viewModel.isEditingHomeScreen = true
                                                                     viewModel.homeGridBounds = emptyMap()
-                                                                    // ── [改动2] 记录拖拽开始时的页索引 ──
                                                                     dragSourcePageIndex = idx
                                                                 },
                                                                 onDragEnd = {},
@@ -798,11 +817,18 @@ fun LauncherHomeScreen(
                     }
                 }
 
-                if (homePages.size > 1) {
+            }
+
+            if (homePages.size > 1) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 108.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1221,12 +1247,6 @@ fun LauncherHomeScreen(
             }
         }
 
-        DragOverlay(
-            viewModel = viewModel,
-            themeColor = themeColor,
-            iconPackFilter = iconPackFilter
-        )
-
         if (viewModel.showCitySelectorDialog) {
             CitySelectorDialog(
                 viewModel = viewModel,
@@ -1247,6 +1267,13 @@ fun LauncherHomeScreen(
                 showToast = showToast
             )
         }
+
+        DragOverlay(
+            viewModel = viewModel,
+            themeColor = themeColor,
+            iconPackFilter = iconPackFilter,
+            isAddScreenOpen = isAddScreenOpen
+        )
     }
 }
 
@@ -1260,18 +1287,20 @@ private data class GestureMenuOption(
 fun DragOverlay(
     viewModel: LauncherViewModel,
     themeColor: Color,
-    iconPackFilter: String
+    iconPackFilter: String,
+    isAddScreenOpen: Boolean = false
 ) {
     val draggedApp = viewModel.draggedApp
     val isDraggingActive = viewModel.isDraggingActive
     if (draggedApp != null && isDraggingActive) {
         val dragOffset = viewModel.dragOffset
+        val hideOverlayZones = viewModel.isDraggingFromDrawer || isAddScreenOpen
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (viewModel.isDraggingFromDrawer) Color.Transparent else Color.Black.copy(alpha = 0.28f))
+                .background(if (hideOverlayZones) Color.Transparent else Color.Black.copy(alpha = 0.28f))
         ) {
-            if (!viewModel.isDraggingFromDrawer) {
+            if (!hideOverlayZones) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
