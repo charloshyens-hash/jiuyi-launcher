@@ -5,7 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -57,11 +57,9 @@ fun AddManagementScreen(
     val maxThumbnailsPerGroup = 3
     val totalGroups = (homePages.size + maxThumbnailsPerGroup - 1) / maxThumbnailsPerGroup
 
-    // 直接读 ViewModel mutableStateOf 字段，Compose 自动追踪重组
     val isDragging = viewModel.isDraggingActive
     val dragOffset = viewModel.dragOffset
 
-    // 进入时清空旧 bounds，防止跨屏幕坐标污染
     DisposableEffect(Unit) {
         viewModel.addScreenThumbnailBounds = emptyMap()
         onDispose {
@@ -169,8 +167,8 @@ fun AddManagementScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         itemsIndexed(pageApps) { _, app ->
-                                            var itemCenterX by remember { mutableStateOf(0f) }
-                                            var itemCenterY by remember { mutableStateOf(0f) }
+                                            var itemScreenX by remember { mutableStateOf(0f) }
+                                            var itemScreenY by remember { mutableStateOf(0f) }
 
                                             Column(
                                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -180,32 +178,45 @@ fun AddManagementScreen(
                                                     .height(80.dp)
                                                     .onGloballyPositioned { bounds ->
                                                         val coords = bounds.positionInWindow()
-                                                        itemCenterX = coords.x / density + bounds.size.width / density / 2f
-                                                        itemCenterY = coords.y / density + bounds.size.height / density / 2f
+                                                        itemScreenX = coords.x / density
+                                                        itemScreenY = coords.y / density
                                                     }
-                                                    // ✅ 用 detectTapGestures onLongPress 触发拖拽开始
-                                                    //    后续坐标完全由 MainActivity 全局 awaitEachGesture 追踪
-                                                    //    不能用 detectDragGesturesAfterLongPress：其 onDrag 会被
-                                                    //    MainActivity Initial pass 的 consume() 饿死
                                                     .pointerInput(app) {
-                                                        detectTapGestures(
-                                                            onLongPress = {
+                                                        detectDragGesturesAfterLongPress(
+                                                            onDragStart = { _ ->
                                                                 viewModel.draggedApp = app
                                                                 viewModel.isDraggingActive = true
                                                                 viewModel.isDraggingFromDock = false
                                                                 viewModel.isDraggingFromDrawer = false
                                                                 viewModel.dragSourceIndex = -1
                                                                 viewModel.dragDistance = -1f
-                                                                // 初始坐标设为图标中心，全局追踪器接管后会立刻更新
                                                                 viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                                    itemCenterX, itemCenterY
+                                                                    x = itemScreenX + 26f,
+                                                                    y = itemScreenY + 26f
                                                                 )
                                                             },
-                                                            onTap = {
-                                                                viewModel.addAppToPage(activePageIndex, app.packageName)
-                                                                showToast("已添加：${app.label}")
+                                                            onDragEnd = {},
+                                                            onDragCancel = {
+                                                                viewModel.draggedApp = null
+                                                                viewModel.isDraggingActive = false
+                                                            },
+                                                            onDrag = { change, dragAmount ->
+                                                                change.consume()
+                                                                viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
+                                                                    x = dragAmount.x / density,
+                                                                    y = dragAmount.y / density
+                                                                )
+                                                                if (viewModel.dragDistance == -1f) {
+                                                                    viewModel.dragDistance = 0f
+                                                                } else {
+                                                                    viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) + kotlin.math.abs(dragAmount.y / density)
+                                                                }
                                                             }
                                                         )
+                                                    }
+                                                    .clickable {
+                                                        viewModel.addAppToPage(activePageIndex, app.packageName)
+                                                        showToast("已添加：${app.label}")
                                                     }
                                             ) {
                                                 IconStylingCard(
@@ -269,21 +280,20 @@ fun AddManagementScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 widgetPresets.forEach { widget ->
-                                    var itemCenterX by remember { mutableStateOf(0f) }
-                                    var itemCenterY by remember { mutableStateOf(0f) }
+                                    var itemScreenX by remember { mutableStateOf(0f) }
+                                    var itemScreenY by remember { mutableStateOf(0f) }
 
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .onGloballyPositioned { bounds ->
                                                 val coords = bounds.positionInWindow()
-                                                itemCenterX = coords.x / density + bounds.size.width / density / 2f
-                                                itemCenterY = coords.y / density + bounds.size.height / density / 2f
+                                                itemScreenX = coords.x / density
+                                                itemScreenY = coords.y / density
                                             }
-                                            // ✅ 同 Tab0：onLongPress 触发，不用 detectDragGesturesAfterLongPress
                                             .pointerInput(widget) {
-                                                detectTapGestures(
-                                                    onLongPress = {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = { _ ->
                                                         viewModel.draggedApp = AppModel(widget, "WIDGET:$widget", "")
                                                         viewModel.isDraggingActive = true
                                                         viewModel.isDraggingFromDock = false
@@ -291,8 +301,26 @@ fun AddManagementScreen(
                                                         viewModel.dragSourceIndex = -1
                                                         viewModel.dragDistance = -1f
                                                         viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                                            itemCenterX, itemCenterY
+                                                            x = itemScreenX + 100f,
+                                                            y = itemScreenY + 40f
                                                         )
+                                                    },
+                                                    onDragEnd = {},
+                                                    onDragCancel = {
+                                                        viewModel.draggedApp = null
+                                                        viewModel.isDraggingActive = false
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        viewModel.dragOffset = viewModel.dragOffset + androidx.compose.ui.geometry.Offset(
+                                                            x = dragAmount.x / density,
+                                                            y = dragAmount.y / density
+                                                        )
+                                                        if (viewModel.dragDistance == -1f) {
+                                                            viewModel.dragDistance = 0f
+                                                        } else {
+                                                            viewModel.dragDistance += kotlin.math.abs(dragAmount.x / density) + kotlin.math.abs(dragAmount.y / density)
+                                                        }
                                                     }
                                                 )
                                             },
@@ -439,7 +467,6 @@ fun AddManagementScreen(
                             val page = homePages[idx]
                             val isCurrentPage = idx == activePageIndex
 
-                            // 悬停高亮：从 viewModel.addScreenThumbnailBounds 读取
                             val isHovered = isDragging && (viewModel.addScreenThumbnailBounds[idx]?.let { rect ->
                                 dragOffset.x >= rect.left && dragOffset.x <= rect.right &&
                                         dragOffset.y >= rect.top && dragOffset.y <= rect.bottom
@@ -456,8 +483,6 @@ fun AddManagementScreen(
                                         val top = coords.y / density
                                         val w = bounds.size.width / density
                                         val h = bounds.size.height / density
-                                        // ✅ 写 viewModel.addScreenThumbnailBounds
-                                        //    handleGlobalDrop 读的就是这个字段
                                         viewModel.addScreenThumbnailBounds =
                                             viewModel.addScreenThumbnailBounds +
                                                     (idx to RectBounds(left, top, left + w, top + h))
