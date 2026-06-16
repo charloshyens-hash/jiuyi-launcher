@@ -102,7 +102,8 @@ fun LauncherAppDrawer(
     var showMoreMenu by remember { mutableStateOf(false) }
     var renameHideDialogProduct by remember { mutableStateOf<AppModel?>(null) }
     var isSearchDialogOpen by remember { mutableStateOf(false) }
-    var isManageHiddenDialogOpen by remember { mutableStateOf(false) }
+    // ── 改动1：替换旧的 isManageHiddenDialogOpen ──────────────────────────────
+    var showVaultEntry by remember { mutableStateOf(false) }
 
     var showSortDialog by remember { mutableStateOf(false) }
     var showSmartCategoryDialog by remember { mutableStateOf(false) }
@@ -239,7 +240,8 @@ fun LauncherAppDrawer(
                             DropdownMenuItem(
                                 text = { Text("管理隐藏应用", color = Color.White, fontSize = 13.sp) },
                                 onClick = {
-                                    isManageHiddenDialogOpen = true
+                                    // ── 改动2：替换旧的 isManageHiddenDialogOpen ──────────
+                                    showVaultEntry = true
                                     showMoreMenu = false
                                 },
                                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = themeColor) }
@@ -597,83 +599,14 @@ fun LauncherAppDrawer(
         }
     }
 
-    // Dialog to manage hidden apps dynamically
-    if (isManageHiddenDialogOpen) {
-        val allApps = viewModel.appList.collectAsState().value.sortedBy { it.label.lowercase() }
-        val hiddenPackages by viewModel.hiddenPackagesFlow.collectAsState()
-
-        AlertDialog(
-            onDismissRequest = { isManageHiddenDialogOpen = false },
-            containerColor = Color(0xFF1C1B1B),
-            title = {
-                Text(
-                    text = "管理应用隐藏状态",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "勾选的应用将在应用抽屉中隐藏。取消勾选即可恢复显示。",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    
-                    Box(modifier = Modifier.height(300.dp).fillMaxWidth()) {
-                        androidx.compose.foundation.lazy.LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(allApps.size) { index ->
-                                val app = allApps[index]
-                                val isHidden = hiddenPackages.contains(app.packageName)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.toggleHiddenPackage(app.packageName)
-                                        }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    IconStylingCard(
-                                        app = app,
-                                        filter = iconPackFilter,
-                                        themeColor = themeColor,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = app.label,
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Checkbox(
-                                        checked = isHidden,
-                                        onCheckedChange = {
-                                            viewModel.toggleHiddenPackage(app.packageName)
-                                        },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = themeColor,
-                                            checkmarkColor = Color.White
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { isManageHiddenDialogOpen = false }) {
-                    Text("完成", color = themeColor, fontWeight = FontWeight.Bold)
-                }
-            }
+    // ── 改动3：删除旧 Dialog，替换为 App Vault 系统入口 ──────────────────────
+    if (showVaultEntry) {
+        val vaultIconPackFilter by viewModel.iconPackFilter.collectAsState()
+        AppVaultEntryPoint(
+            viewModel = viewModel,
+            themeColor = themeColor,
+            iconPackFilter = vaultIconPackFilter,
+            onDismiss = { showVaultEntry = false }
         )
     }
 
