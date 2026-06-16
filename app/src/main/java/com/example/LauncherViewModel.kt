@@ -806,7 +806,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        val sortedRootApps = rootApps.sortedWith(compareBy { getAppSortKey(it) })
+        val sortedRootApps = if (sortType == 0) {
+            rootApps.sortedWith(AppSortUtils.getAlphaComparator())
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            rootApps.sortedWith(compareBy { getAppSortKey(it) as Comparable<Any> })
+        }
 
         if (query.isEmpty()) {
             val sortedFolders = folders.sortedBy { it.name.lowercase() }
