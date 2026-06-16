@@ -61,29 +61,29 @@ fun LauncherAppDrawer(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Query states from VM
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filteredApps by viewModel.filteredApps.collectAsState()
     val showLabels by viewModel.showLabels.collectAsState()
-    val drawerGrid by viewModel.drawerGrid.collectAsState() // "4x6" vs "5x5"
+    val drawerGrid by viewModel.drawerGrid.collectAsState()
     val iconPackFilter by viewModel.iconPackFilter.collectAsState()
     val drawerPageIndex by viewModel.drawerPageIndex.collectAsState()
 
     val itemsPerPage = when (drawerGrid) {
         "5x5" -> 25
-        else -> 24 // 4x6
+        else -> 24
     }
     val appPagesCount = Math.max(1, (filteredApps.size + itemsPerPage - 1) / itemsPerPage)
     val totalDrawerPages = appPagesCount + 2
 
-    val pagerState = rememberPagerState(initialPage = drawerPageIndex.coerceIn(0, totalDrawerPages - 1), pageCount = { totalDrawerPages })
+    val pagerState = rememberPagerState(
+        initialPage = drawerPageIndex.coerceIn(0, totalDrawerPages - 1),
+        pageCount = { totalDrawerPages }
+    )
 
-    // Sync from pagerState.currentPage to viewModel.drawerPageIndex
     LaunchedEffect(pagerState.currentPage) {
         viewModel.drawerPageIndex.value = pagerState.currentPage
     }
 
-    // Sync from viewModel.drawerPageIndex to pagerState.currentPage
     LaunchedEffect(drawerPageIndex) {
         val bounded = drawerPageIndex.coerceIn(0, totalDrawerPages - 1)
         if (pagerState.currentPage != bounded) {
@@ -91,19 +91,16 @@ fun LauncherAppDrawer(
         }
     }
 
-    // Instantly snap to 0 on backpress to avoid layout offsets
     LaunchedEffect(Unit) {
         viewModel.backToFirstScreenEvent.collect {
             pagerState.scrollToPage(0)
         }
     }
 
-    // Pop up states
     var showMoreMenu by remember { mutableStateOf(false) }
     var renameHideDialogProduct by remember { mutableStateOf<AppModel?>(null) }
     var isSearchDialogOpen by remember { mutableStateOf(false) }
     var isManageHiddenDialogOpen by remember { mutableStateOf(false) }
-
     var showSortDialog by remember { mutableStateOf(false) }
     var showSmartCategoryDialog by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
@@ -114,32 +111,30 @@ fun LauncherAppDrawer(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xEB131313)) // Jiuyi Desktop 92% opacity translucent dark surface
+            .background(Color(0xEB131313))
             .windowInsetsPadding(WindowInsets.statusBars)
             .navigationBarsPadding()
     ) {
-        // Line-1 Toolbar: Tabs ("应用", "小组件", "我的手机") + Search Icon + Options Icon (⋮)
+        // ── 顶部工具栏 ─────────────────────────────────────────────────────
         Column(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
-                // Continuous fine bottom border line (1.dp) - aligned to absolute bottom of Box
                 HorizontalDivider(
-                    color = Color.White.copy(alpha = 0.12f), 
+                    color = Color.White.copy(alpha = 0.12f),
                     thickness = 1.dp,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
-                // Perfect global horizontal alignment centered across the remaining space
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(start = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Tabs: Applications, widgets and properties - centered in remaining space
+                    // Tab 标签
                     Row(
                         modifier = Modifier.weight(1f),
                         horizontalArrangement = Arrangement.Center,
@@ -169,7 +164,6 @@ fun LauncherAppDrawer(
                                     .fillMaxHeight()
                                     .padding(horizontal = 12.dp)
                             ) {
-                                // Vertically center labels elegantly
                                 Box(
                                     modifier = Modifier.weight(1f),
                                     contentAlignment = Alignment.Center
@@ -181,8 +175,6 @@ fun LauncherAppDrawer(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
                                 }
-                                
-                                // Indicator line: Bold accent bar at bottom, physical overlap with HorizonalDivider
                                 Box(
                                     modifier = Modifier
                                         .height(3.dp)
@@ -194,12 +186,11 @@ fun LauncherAppDrawer(
                         }
                     }
 
-                    // Action buttons positioned to the right end
+                    // 右侧按钮组
                     Row(
                         modifier = Modifier.wrapContentWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Search Icon Button
                         IconButton(onClick = { isSearchDialogOpen = true }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -208,79 +199,85 @@ fun LauncherAppDrawer(
                             )
                         }
 
-                        // Options popup trigger Options (⋮)
+                        // ⋮ 菜单 —— Box 包裹 IconButton + DropdownMenu
                         Box {
                             IconButton(onClick = { showMoreMenu = true }) {
-                                Icon(imageVector = Icons.Default.MoreVert, contentDescription = "More", tint = Color.White)
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More",
+                                    tint = Color.White
+                                )
                             }
 
-                        DropdownMenu(
-                            expanded = showMoreMenu,
-                            onDismissRequest = { showMoreMenu = false },
-                            modifier = Modifier.background(Color(0xFF131313))
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("刷新应用程序", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    viewModel.refreshInstalledApps()
-                                    showMoreMenu = false
-                                    showToast("应用程序缓存已更新")
-                                },
-                                leadingIcon = { Icon(Icons.Default.Refresh, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("应用图标排序", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    showSortDialog = true
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.Sort, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("管理隐藏应用", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    isManageHiddenDialogOpen = true
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("应用智能分类", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    showSmartCategoryDialog = true
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.AutoAwesome, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("新建文件夹", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    showNewFolderDialog = true
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.CreateNewFolder, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("应用列表设置", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    showListSettingsDialog = true
-                                    showMoreMenu = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, null, tint = themeColor) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false },
+                                modifier = Modifier.background(Color(0xFF131313))
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("刷新应用程序", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        viewModel.refreshInstalledApps()
+                                        showMoreMenu = false
+                                        showToast("应用程序缓存已更新")
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, null, tint = themeColor) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("应用图标排序", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        showSortDialog = true
+                                        showMoreMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Sort, null, tint = themeColor) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("管理隐藏应用", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        isManageHiddenDialogOpen = true
+                                        showMoreMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = themeColor) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("应用智能分类", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        showSmartCategoryDialog = true
+                                        showMoreMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.AutoAwesome, null, tint = themeColor) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("新建文件夹", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        showNewFolderDialog = true
+                                        showMoreMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, null, tint = themeColor) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("应用列表设置", color = Color.White, fontSize = 13.sp) },
+                                    onClick = {
+                                        showListSettingsDialog = true
+                                        showMoreMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Settings, null, tint = themeColor) }
+                                )
+                            }
+                        } // end Box (⋮ 菜单)
+                    } // end Row (右侧按钮组)
+                } // end Row (整行)
+            } // end Box (52dp 工具栏)
+        } // end Column (顶部工具栏)
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Main HorizontalPager to support horizontal swipe navigation across all flat grids & views
+        // ── HorizontalPager 主内容区 ────────────────────────────────────────
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.weight(1f).fillMaxWidth()
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) { pageIndex ->
             val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
             val drawerTransition by viewModel.drawerTransition.collectAsState()
@@ -297,68 +294,64 @@ fun LauncherAppDrawer(
                     )
             ) {
                 if (pageIndex < appPagesCount) {
-                    // Page is one of the divided Apps Grid pages
                     Column(modifier = Modifier.fillMaxSize()) {
-                    if (searchQuery.isNotEmpty() && pageIndex == 0) {
-                        // Active search filter indicator label, shown on front page
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Search, null, tint = themeColor, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "搜索结果: \"$searchQuery\"",
-                                color = Color.White.copy(alpha = 0.62f),
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = "清除搜索",
-                                color = themeColor,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { viewModel.searchQuery.value = "" }
-                            )
+                        if (searchQuery.isNotEmpty() && pageIndex == 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Search, null, tint = themeColor, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "搜索结果: \"$searchQuery\"",
+                                    color = Color.White.copy(alpha = 0.62f),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "清除搜索",
+                                    color = themeColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable { viewModel.searchQuery.value = "" }
+                                )
+                            }
                         }
+                        SingleAppsPageGrid(
+                            viewModel = viewModel,
+                            themeColor = themeColor,
+                            showLabels = showLabels,
+                            gridMode = drawerGrid,
+                            displayApps = filteredApps,
+                            pageIdx = pageIndex,
+                            itemsPerPage = itemsPerPage,
+                            iconFilter = iconPackFilter,
+                            onAppLongClicked = { renameHideDialogProduct = it },
+                            onFolderClicked = { folder -> activeOpenedFolder = folder },
+                            onRenameFolderRequested = { folder -> showRenameFolderDialog = folder },
+                            onDrop = onDrop
+                        )
                     }
-                    
-                    SingleAppsPageGrid(
-                        viewModel = viewModel,
+                } else if (pageIndex == appPagesCount) {
+                    WidgetsDrawerGrid(
+                        pinnedWidgets = pinnedWidgets,
+                        onPinWidgetToggle = onPinWidgetToggle,
                         themeColor = themeColor,
-                        showLabels = showLabels,
-                        gridMode = drawerGrid,
-                        displayApps = filteredApps,
-                        pageIdx = pageIndex,
-                        itemsPerPage = itemsPerPage,
-                        iconFilter = iconPackFilter,
-                        onAppLongClicked = { renameHideDialogProduct = it },
-                        onFolderClicked = { folder -> activeOpenedFolder = folder },
-                        onRenameFolderRequested = { folder -> showRenameFolderDialog = folder },
+                        viewModel = viewModel,
                         onDrop = onDrop
                     )
+                } else {
+                    MyPhoneDrawerDashboard(
+                        viewModel = viewModel,
+                        themeColor = themeColor
+                    )
                 }
-            } else if (pageIndex == appPagesCount) {
-                // Page after apps list: 小组件/小部件 (Widgets)
-                WidgetsDrawerGrid(
-                    pinnedWidgets = pinnedWidgets,
-                    onPinWidgetToggle = onPinWidgetToggle,
-                    themeColor = themeColor,
-                    viewModel = viewModel,
-                    onDrop = onDrop
-                )
-            } else {
-                // Last Page: 我的手机 (My Phone)
-                MyPhoneDrawerDashboard(
-                    viewModel = viewModel,
-                    themeColor = themeColor
-                )
             }
-        }
-    }
+        } // end HorizontalPager
 
+        // ── 拖拽时底部缩略图导航栏 ──────────────────────────────────────────
         val density = LocalDensity.current.density
         val isDraggingFromDrawer = viewModel.isDraggingActive && viewModel.isDraggingFromDrawer
 
@@ -370,7 +363,7 @@ fun LauncherAppDrawer(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0C0C0C)) // Contrast deep black bar below
+                    .background(Color(0xFF0C0C0C))
                     .padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -395,7 +388,7 @@ fun LauncherAppDrawer(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left navigation
+                    // 左翻按钮
                     Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                         if (thumbnailGroupIndex > 0) {
                             IconButton(onClick = { thumbnailGroupIndex-- }) {
@@ -404,7 +397,7 @@ fun LauncherAppDrawer(
                         }
                     }
 
-                    // Main 3 thumbnails section
+                    // 缩略图
                     Row(
                         modifier = Modifier.weight(1f),
                         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -427,9 +420,8 @@ fun LauncherAppDrawer(
                                         val top = coords.y / density
                                         val w = bounds.size.width / density
                                         val h = bounds.size.height / density
-
-                                        // Register current coordinates in map for dropped item targets
-                                        viewModel.drawerThumbnailBounds = viewModel.drawerThumbnailBounds + (idx to androidx.compose.ui.geometry.Rect(left, top, left + w, top + h))
+                                        viewModel.drawerThumbnailBounds = viewModel.drawerThumbnailBounds +
+                                            (idx to androidx.compose.ui.geometry.Rect(left, top, left + w, top + h))
                                     }
                                     .border(
                                         width = if (isCurrentPage) 2.5.dp else 1.2.dp,
@@ -455,13 +447,17 @@ fun LauncherAppDrawer(
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold
                                         )
-
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             if (idx == 0) {
-                                                Icon(imageVector = Icons.Default.WatchLater, contentDescription = null, tint = if (isCurrentPage) Color.White else themeColor, modifier = Modifier.size(10.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.WatchLater,
+                                                    contentDescription = null,
+                                                    tint = if (isCurrentPage) Color.White else themeColor,
+                                                    modifier = Modifier.size(10.dp)
+                                                )
                                             }
                                             val realAppsCount = page.apps.count { it != "EMPTY" && it.isNotEmpty() }
                                             if (page.widgets.isNotEmpty()) {
@@ -481,7 +477,7 @@ fun LauncherAppDrawer(
                             }
                         }
 
-                        // Add new page thumbnail if in last group and we can add more pages
+                        // 新增页按钮
                         val isLastGroup = (thumbnailGroupIndex + 1) == totalGroups || totalGroups == 0
                         if (isLastGroup && homePages.size < 20) {
                             Card(
@@ -510,7 +506,7 @@ fun LauncherAppDrawer(
                         }
                     }
 
-                    // Right navigation
+                    // 右翻按钮
                     Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                         val hasMoreOnRight = (thumbnailGroupIndex + 1) < totalGroups
                         if (hasMoreOnRight) {
@@ -521,10 +517,10 @@ fun LauncherAppDrawer(
                     }
                 }
             }
-        }
+        } // end AnimatedVisibility
 
+        // ── 底部导航指示点 ──────────────────────────────────────────────────
         if (!isDraggingFromDrawer) {
-            // 3. Multi-in-one unified navigation indicator dots at the bottom of the drawer (maps 1-to-1 to all pages)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -550,7 +546,7 @@ fun LauncherAppDrawer(
             }
         }
 
-        // ── 所有弹窗（拆分至 AppDrawerDialogs.kt）───────────────────────────────
+        // ── 所有弹窗（拆分至 AppDrawerDialogs.kt）─────────────────────────
         AppDrawerDialogs(
             viewModel = viewModel,
             themeColor = themeColor,
@@ -575,6 +571,7 @@ fun LauncherAppDrawer(
             onRenameFolderClose = { showRenameFolderDialog = null },
             searchQuery = searchQuery
         )
+    } // end Column (最外层)
 }
 
 
