@@ -166,6 +166,8 @@ private fun ManageHideScreen(
 ) {
     val allApps by viewModel.appList.collectAsState()
     val hiddenPkgs by viewModel.hiddenPackagesFlow.collectAsState()
+    // 记录进入时的初始状态快照，用于判断是否有变化
+    val initialSelected = remember { hiddenPkgs.toSet() }
     var tempSelected by remember { mutableStateOf(hiddenPkgs.toSet()) }
 
     val sorted = remember(allApps) {
@@ -215,7 +217,8 @@ private fun ManageHideScreen(
                     viewModel.setHiddenPackages(tempSelected)
                     onConfirm()
                 },
-                enabled = tempSelected.isNotEmpty(),
+                // 修复：与初始状态不同时才可点击，解决"全部取消隐藏后无法确认"的问题
+                enabled = tempSelected != initialSelected,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = themeColor)
             ) { Text("确定", color = Color.Black) }
