@@ -22,7 +22,47 @@ class LauncherPrefs(context: Context) {
         private const val KEY_CUSTOM_TEMP = "custom_temp"
         private const val KEY_MUSIC_WIDGET_MODE = "music_widget_mode"
         private const val KEY_PREFERRED_MUSIC_PACKAGE = "preferred_music_package"
+        private const val KEY_TOUCH_EFFECT = "touch_effect"
+        private const val KEY_HOME_TRANSITION = "home_transition"
+        private const val KEY_DRAWER_TRANSITION = "drawer_transition"
+        private const val KEY_CROSS_TRANSITION = "cross_transition"
+        private const val KEY_TOUCH_RANDOM_POOL = "touch_random_pool"
+        private const val KEY_HOME_RANDOM_POOL = "home_random_pool"
+        private const val KEY_DRAWER_RANDOM_POOL = "drawer_random_pool"
+        private const val KEY_CROSS_RANDOM_POOL = "cross_random_pool"
     }
+
+    var touchEffect: String
+        get() = prefs.getString(KEY_TOUCH_EFFECT, "默认") ?: "默认"
+        set(value) = prefs.edit().putString(KEY_TOUCH_EFFECT, value).apply()
+
+    var homeTransition: String
+        get() = prefs.getString(KEY_HOME_TRANSITION, "默认") ?: "默认"
+        set(value) = prefs.edit().putString(KEY_HOME_TRANSITION, value).apply()
+
+    var drawerTransition: String
+        get() = prefs.getString(KEY_DRAWER_TRANSITION, "默认") ?: "默认"
+        set(value) = prefs.edit().putString(KEY_DRAWER_TRANSITION, value).apply()
+
+    var crossTransition: String
+        get() = prefs.getString(KEY_CROSS_TRANSITION, "默认") ?: "默认"
+        set(value) = prefs.edit().putString(KEY_CROSS_TRANSITION, value).apply()
+
+    var touchRandomPool: String
+        get() = prefs.getString(KEY_TOUCH_RANDOM_POOL, "焰火,礼花,曝光,爱心气球,心花怒放,星光四射,撒钱,蝴蝶") ?: "焰火,礼花,曝光,爱心气球,心花怒放,星光四射,撒钱,蝴蝶"
+        set(value) = prefs.edit().putString(KEY_TOUCH_RANDOM_POOL, value).apply()
+
+    var homeRandomPool: String
+        get() = prefs.getString(KEY_HOME_RANDOM_POOL, "卡片堆,翻滚,翻转,钟摆,立方体（内）,立方体（外）,百叶窗,弦,兄弟连,风火轮,球,圆柱,龙卷风,双飞燕,太极,吃豆豆,时光隧道,开门,翻页") ?: "卡片堆,翻滚,翻转,钟摆,立方体（内）,立方体（外）,百叶窗,弦,兄弟连,风火轮,球,圆柱,龙卷风,双飞燕,太极,吃豆豆,时光隧道,开门,翻页"
+        set(value) = prefs.edit().putString(KEY_HOME_RANDOM_POOL, value).apply()
+
+    var drawerRandomPool: String
+        get() = prefs.getString(KEY_DRAWER_RANDOM_POOL, "卡片堆,翻滚,翻转,钟摆,立方体（内）,立方体（外）,百叶窗,弦,兄弟连,风火轮,球,圆柱,龙卷风,双飞燕,太极,吃豆豆,时光隧道,开门,翻页") ?: "卡片堆,翻滚,翻转,钟摆,立方体（内）,立方体（外）,百叶窗,弦,兄弟连,风火轮,球,圆柱,龙卷风,双飞燕,太极,吃豆豆,时光隧道,开门,翻页"
+        set(value) = prefs.edit().putString(KEY_DRAWER_RANDOM_POOL, value).apply()
+
+    var crossRandomPool: String
+        get() = prefs.getString(KEY_CROSS_RANDOM_POOL, "内缩放,外缩放,风车,电视机") ?: "内缩放,外缩放,风车,电视机"
+        set(value) = prefs.edit().putString(KEY_CROSS_RANDOM_POOL, value).apply()
 
     var musicWidgetMode: Int
         get() = prefs.getInt(KEY_MUSIC_WIDGET_MODE, 0) // 0: System Media Controller, 1: Built-in Custom Stream
@@ -186,6 +226,79 @@ class LauncherPrefs(context: Context) {
         get() = prefs.getString("drawer_package_order_csv", "") ?: ""
         set(value) = prefs.edit().putString("drawer_package_order_csv", value).apply()
 
+    // --- Custom Adjustments (V2) ---
+    var iconRoundness: Int
+        get() = prefs.getInt("icon_roundness_v1", 12)
+        set(value) = prefs.edit().putInt("icon_roundness_v1", value).apply()
+
+    var iconSizeScale: Int
+        get() = prefs.getInt("icon_size_scale_v1", 100)
+        set(value) = prefs.edit().putInt("icon_size_scale_v1", value).apply()
+
+    var fontSizeSp: Int
+        get() = prefs.getInt("font_size_sp_v1", 11)
+        set(value) = prefs.edit().putInt("font_size_sp_v1", value).apply()
+
+    var drawerSortType: Int
+        get() = prefs.getInt("drawer_sort_type_v1", 0) // 0: Alpha, 1: Install Newest, 2: Install Oldest, 3: Usage count
+        set(value) = prefs.edit().putInt("drawer_sort_type_v1", value).apply()
+
+    var drawerFoldersRaw: String
+        get() = prefs.getString("drawer_folders_raw_v1", "") ?: ""
+        set(value) = prefs.edit().putString("drawer_folders_raw_v1", value).apply()
+
+    var layoutSnapshotRaw: String
+        get() = prefs.getString("layout_snapshot_raw_v1", "") ?: ""
+        set(value) = prefs.edit().putString("layout_snapshot_raw_v1", value).apply()
+
+    var hasLayoutSnapshot: Boolean
+        get() = prefs.getBoolean("has_layout_snapshot_v1", false)
+        set(value) = prefs.edit().putBoolean("has_layout_snapshot_v1", value).apply()
+
+    var appLaunchCountsCSV: String
+        get() = prefs.getString("app_launch_counts_csv_v1", "") ?: ""
+        set(value) = prefs.edit().putString("app_launch_counts_csv_v1", value).apply()
+
+    fun getAppLaunchCounts(): Map<String, Int> {
+        val raw = appLaunchCountsCSV
+        if (raw.isEmpty()) return emptyMap()
+        return raw.split(",").mapNotNull {
+            val parts = it.split(":")
+            if (parts.size >= 2) {
+                parts[0] to (parts[1].toIntOrNull() ?: 0)
+            } else null
+        }.toMap()
+    }
+
+    fun saveAppLaunchCounts(map: Map<String, Int>) {
+        appLaunchCountsCSV = map.entries.joinToString(",") { "${it.key}:${it.value}" }
+    }
+
+    fun getDrawerFolders(): List<DrawerFolder> {
+        val raw = drawerFoldersRaw
+        if (raw.isEmpty()) return emptyList()
+        return raw.split("|").mapNotNull { folderStr ->
+            val parts = folderStr.split(":::")
+            if (parts.size >= 2) {
+                val id = parts[0]
+                val name = parts[1]
+                val pkgs = if (parts.size >= 3 && parts[2].isNotEmpty()) {
+                    parts[2].split(",").filter { it.isNotEmpty() }.toMutableList()
+                } else {
+                    mutableListOf<String>()
+                }
+                DrawerFolder(id, name, pkgs)
+            } else null
+        }
+    }
+
+    fun saveDrawerFolders(folders: List<DrawerFolder>) {
+        val serialized = folders.joinToString("|") { folder ->
+            "${folder.id}:::${folder.name}:::${folder.packageNames.joinToString(",")}"
+        }
+        drawerFoldersRaw = serialized
+    }
+
     fun toggleHiddenPackage(pkg: String) {
         val current = hiddenPackages.toMutableSet()
         if (current.contains(pkg)) {
@@ -204,4 +317,10 @@ class LauncherPrefs(context: Context) {
 data class RecentCity(
     val name: String,
     val query: String
+)
+
+data class DrawerFolder(
+    val id: String,
+    var name: String,
+    val packageNames: MutableList<String> = mutableListOf()
 )

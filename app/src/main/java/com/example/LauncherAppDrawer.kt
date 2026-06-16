@@ -32,6 +32,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,6 +103,13 @@ fun LauncherAppDrawer(
     var renameHideDialogProduct by remember { mutableStateOf<AppModel?>(null) }
     var isSearchDialogOpen by remember { mutableStateOf(false) }
     var isManageHiddenDialogOpen by remember { mutableStateOf(false) }
+
+    var showSortDialog by remember { mutableStateOf(false) }
+    var showSmartCategoryDialog by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
+    var showListSettingsDialog by remember { mutableStateOf(false) }
+    var activeOpenedFolder by remember { mutableStateOf<DrawerFolder?>(null) }
+    var showRenameFolderDialog by remember { mutableStateOf<DrawerFolder?>(null) }
 
     Column(
         modifier = modifier
@@ -215,39 +229,12 @@ fun LauncherAppDrawer(
                                 leadingIcon = { Icon(Icons.Default.Refresh, null, tint = themeColor) }
                             )
                             DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        if (showLabels) "隐藏图标标签" else "显示图标标签", 
-                                        color = Color.White, 
-                                        fontSize = 13.sp
-                                    ) 
-                                },
+                                text = { Text("应用图标排序", color = Color.White, fontSize = 13.sp) },
                                 onClick = {
-                                    viewModel.toggleShowLabels()
+                                    showSortDialog = true
                                     showMoreMenu = false
                                 },
-                                leadingIcon = { Icon(if (showLabels) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("抽屉网格: ${drawerGrid}", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    val next = if (drawerGrid == "4x6") "5x5" else "4x6"
-                                    viewModel.updateDrawerGrid(next)
-                                    showMoreMenu = false
-                                    showToast("已切换网格布局为 $next")
-                                },
-                                leadingIcon = { Icon(Icons.Default.GridView, null, tint = themeColor) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("切换图标滤镜 (${iconPackFilter})", color = Color.White, fontSize = 13.sp) },
-                                onClick = {
-                                    val list = listOf("Minimalist", "Vintage Pixel", "Sketch Outline", "Raw Native")
-                                    val nextIdx = (list.indexOf(iconPackFilter) + 1) % list.size
-                                    viewModel.updateIconPackFilter(list[nextIdx])
-                                    showMoreMenu = false
-                                    showToast("图标外观滤镜已更改为: ${list[nextIdx]}")
-                                },
-                                leadingIcon = { Icon(Icons.Default.Palette, null, tint = themeColor) }
+                                leadingIcon = { Icon(Icons.Default.Sort, null, tint = themeColor) }
                             )
                             DropdownMenuItem(
                                 text = { Text("管理隐藏应用", color = Color.White, fontSize = 13.sp) },
@@ -258,12 +245,28 @@ fun LauncherAppDrawer(
                                 leadingIcon = { Icon(Icons.Default.VisibilityOff, null, tint = themeColor) }
                             )
                             DropdownMenuItem(
-                                text = { Text("退出应用抽屉", color = Color.White, fontSize = 13.sp) },
+                                text = { Text("应用智能分类", color = Color.White, fontSize = 13.sp) },
                                 onClick = {
+                                    showSmartCategoryDialog = true
                                     showMoreMenu = false
-                                    onClose()
                                 },
-                                leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, tint = themeColor) }
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, null, tint = themeColor) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("新建文件夹", color = Color.White, fontSize = 13.sp) },
+                                onClick = {
+                                    showNewFolderDialog = true
+                                    showMoreMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.CreateNewFolder, null, tint = themeColor) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("应用列表设置", color = Color.White, fontSize = 13.sp) },
+                                onClick = {
+                                    showListSettingsDialog = true
+                                    showMoreMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, null, tint = themeColor) }
                             )
                         }
                     }
@@ -279,9 +282,23 @@ fun LauncherAppDrawer(
             state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) { pageIndex ->
-            if (pageIndex < appPagesCount) {
-                // Page is one of the divided Apps Grid pages
-                Column(modifier = Modifier.fillMaxSize()) {
+            val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+            val drawerTransition by viewModel.drawerTransition.collectAsState()
+            val drawerPool by viewModel.drawerRandomPool.collectAsState()
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pagerTransition(
+                        pageOffset = pageOffset,
+                        effect = drawerTransition,
+                        randomPool = drawerPool,
+                        pageIndex = pageIndex
+                    )
+            ) {
+                if (pageIndex < appPagesCount) {
+                    // Page is one of the divided Apps Grid pages
+                    Column(modifier = Modifier.fillMaxSize()) {
                     if (searchQuery.isNotEmpty() && pageIndex == 0) {
                         // Active search filter indicator label, shown on front page
                         Row(
@@ -318,6 +335,8 @@ fun LauncherAppDrawer(
                         itemsPerPage = itemsPerPage,
                         iconFilter = iconPackFilter,
                         onAppLongClicked = { renameHideDialogProduct = it },
+                        onFolderClicked = { folder -> activeOpenedFolder = folder },
+                        onRenameFolderRequested = { folder -> showRenameFolderDialog = folder },
                         onDrop = onDrop
                     )
                 }
@@ -338,6 +357,7 @@ fun LauncherAppDrawer(
                 )
             }
         }
+    }
 
         val density = LocalDensity.current.density
         val isDraggingFromDrawer = viewModel.isDraggingActive && viewModel.isDraggingFromDrawer
@@ -656,7 +676,584 @@ fun LauncherAppDrawer(
             }
         )
     }
+
+    // --- Organization Dialog overlays (V2) ---
+    if (showSortDialog) {
+        val currentSortType by viewModel.drawerSortType.collectAsState()
+        AlertDialog(
+            onDismissRequest = { showSortDialog = false },
+            title = { Text("应用图标排序", color = Color.White) },
+            containerColor = Color(0xFF1E1E1E),
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val options = listOf(
+                        "按字母排序" to 0,
+                        "按安装时间从近到远" to 1,
+                        "按安装时间从远到近" to 2,
+                        "按使用次数从多到少" to 3
+                    )
+                    options.forEach { (text, index) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.updateDrawerSortType(index)
+                                    showSortDialog = false
+                                    showToast("排序方式已更改：$text")
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text, color = Color.White, fontSize = 14.sp)
+                            if (currentSortType == index) {
+                                Icon(Icons.Default.Check, contentDescription = "已选择", tint = themeColor)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSortDialog = false }) {
+                    Text("取消", color = themeColor)
+                }
+            }
+        )
+    }
+
+    if (showSmartCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showSmartCategoryDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, null, tint = themeColor, modifier = Modifier.padding(end = 8.dp))
+                    Text("应用智能分类", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "选择智能分类后，算法会将桌面所有应用自动归入以下文件夹中：\n" +
+                        "👉 社交、工具、游戏、影音、办公、系统工具、购物、其他 等。\n\n" +
+                        "⚠️ 如果有原有文件夹，分类完成后您可以随时选择【恢复布局】进行撤销。",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.smartCategorizeApps()
+                            showSmartCategoryDialog = false
+                            showToast("智能分类完成，原文件夹已安全备份！")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                    ) {
+                        Text("开始自动分类", color = Color.Black)
+                    }
+                    TextButton(
+                        onClick = {
+                            val ok = viewModel.restoreLayoutSnapshot()
+                            showSmartCategoryDialog = false
+                            if (ok) {
+                                showToast("已成功恢复上次分类前的文件夹布局！")
+                            } else {
+                                showToast("没有可恢复的备份快照")
+                            }
+                        }
+                    ) {
+                        Text("恢复备份布局 (撤销)", color = themeColor)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmartCategoryDialog = false }) {
+                    Text("取消", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    if (showNewFolderDialog) {
+        var folderNameInput by remember { mutableStateOf("新建文件夹") }
+        AlertDialog(
+            onDismissRequest = { showNewFolderDialog = false },
+            title = { Text("新建文件夹", color = Color.White) },
+            containerColor = Color(0xFF1E1E1E),
+            text = {
+                Column {
+                    Text("请输入文件夹名称：", color = Color.LightGray, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = folderNameInput,
+                        onValueChange = { folderNameInput = it },
+                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = themeColor,
+                            focusedLabelColor = themeColor,
+                            unfocusedBorderColor = Color.LightGray
+                        ),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = folderNameInput.trim().ifEmpty { "新建文件夹" }
+                        viewModel.createDrawerFolder(name)
+                        showNewFolderDialog = false
+                        showToast("文件夹「$name」创建成功")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) {
+                    Text("创建", color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFolderDialog = false }) {
+                    Text("取消", color = themeColor)
+                }
+            }
+        )
+    }
+
+    if (showListSettingsDialog) {
+        val currentRoundness by viewModel.iconRoundness.collectAsState()
+        val currentSizeScale by viewModel.iconSizeScale.collectAsState()
+        val currentFontSize by viewModel.fontSizeSp.collectAsState()
+        val currentShowLabel by viewModel.showLabels.collectAsState()
+        val currentShowSys by viewModel.showSystemApps.collectAsState()
+        val currentGrid by viewModel.drawerGrid.collectAsState()
+        val currentFilter by viewModel.iconPackFilter.collectAsState()
+
+        AlertDialog(
+            onDismissRequest = { showListSettingsDialog = false },
+            title = { Text("应用列表布局设置", color = Color.White) },
+            containerColor = Color(0xFF1E1E1E),
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleShowLabels() },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("显示应用名称标签", color = Color.White, fontSize = 13.sp)
+                        Switch(
+                            checked = currentShowLabel,
+                            onCheckedChange = { viewModel.toggleShowLabels() },
+                            colors = SwitchDefaults.colors(checkedThumbColor = themeColor, checkedTrackColor = themeColor.copy(alpha = 0.5f))
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleShowSystemApps() },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("显示系统应用程序", color = Color.White, fontSize = 13.sp)
+                        Switch(
+                            checked = currentShowSys,
+                            onCheckedChange = { viewModel.toggleShowSystemApps() },
+                            colors = SwitchDefaults.colors(checkedThumbColor = themeColor, checkedTrackColor = themeColor.copy(alpha = 0.5f))
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            val next = if (currentGrid == "4x6") "5x5" else "4x6"
+                            viewModel.updateDrawerGrid(next)
+                        },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("抽屉网格列排列: $currentGrid", color = Color.White, fontSize = 13.sp)
+                        Button(
+                            onClick = {
+                                val next = if (currentGrid == "4x6") "5x5" else "4x6"
+                                viewModel.updateDrawerGrid(next)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = themeColor.copy(alpha = 0.15f), contentColor = themeColor),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("切换", fontSize = 11.sp)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("图标艺术滤镜: $currentFilter", color = Color.White, fontSize = 13.sp)
+                        Button(
+                            onClick = {
+                                val filters = listOf("Minimalist", "Vintage Pixel", "Sketch Outline", "Raw Native")
+                                val nIdx = (filters.indexOf(currentFilter) + 1) % filters.size
+                                viewModel.updateIconPackFilter(filters[nIdx])
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = themeColor.copy(alpha = 0.15f), contentColor = themeColor),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("切滤镜", fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("图标圆角大小: ${currentRoundness}dp", color = Color.LightGray, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = currentRoundness.toFloat(),
+                            onValueChange = { viewModel.updateIconRoundness(it.toInt()) },
+                            valueRange = 0f..40f,
+                            colors = SliderDefaults.colors(thumbColor = themeColor, activeTrackColor = themeColor)
+                        )
+                    }
+
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("图标比例缩放: ${currentSizeScale}%", color = Color.LightGray, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = currentSizeScale.toFloat(),
+                            onValueChange = { viewModel.updateIconSizeScale(it.toInt()) },
+                            valueRange = 50f..150f,
+                            colors = SliderDefaults.colors(thumbColor = themeColor, activeTrackColor = themeColor)
+                        )
+                    }
+
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("应用字体大小: ${currentFontSize}sp", color = Color.LightGray, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = currentFontSize.toFloat(),
+                            onValueChange = { viewModel.updateFontSizeSp(it.toInt()) },
+                            valueRange = 8f..22f,
+                            colors = SliderDefaults.colors(thumbColor = themeColor, activeTrackColor = themeColor)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showListSettingsDialog = false }) {
+                    Text("确定", color = themeColor)
+                }
+            }
+        )
+    }
+
+    if (activeOpenedFolder != null) {
+        val foldersList by viewModel.drawerFolders.collectAsState()
+        val folder = foldersList.find { it.id == activeOpenedFolder!!.id }
+        
+        if (folder == null) {
+            activeOpenedFolder = null
+        } else {
+            var showAppsSelector by remember { mutableStateOf(false) }
+            var isRenamingFolder by remember { mutableStateOf(false) }
+            var updatedNameInput by remember { mutableStateOf(folder.name) }
+            
+            val rawAppList by viewModel.appList.collectAsState()
+            val folderApps = folder.packageNames.mapNotNull { pkg -> rawAppList.firstOrNull { it.packageName == pkg } }
+
+            AlertDialog(
+                onDismissRequest = { activeOpenedFolder = null },
+                containerColor = Color(0xFF161616),
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isRenamingFolder) {
+                            OutlinedTextField(
+                                value = updatedNameInput,
+                                onValueChange = { updatedNameInput = it },
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = themeColor),
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    if (updatedNameInput.isNotEmpty()) {
+                                        viewModel.renameDrawerFolder(folder.id, updatedNameInput)
+                                    }
+                                    isRenamingFolder = false
+                                }
+                            ) {
+                                Icon(Icons.Default.Save, "保存重命名", tint = themeColor)
+                            }
+                        } else {
+                            Text(
+                                text = folder.name,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { isRenamingFolder = true }
+                            )
+                            IconButton(onClick = { isRenamingFolder = true }) {
+                                Icon(Icons.Default.Edit, "重命名", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                viewModel.deleteDrawerFolder(folder.id)
+                                activeOpenedFolder = null
+                                showToast("文件夹已解散")
+                            }
+                        ) {
+                            Icon(Icons.Default.Delete, "解散本文件夹", tint = Color.Red.copy(alpha = 0.8f))
+                        }
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 350.dp)
+                    ) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(4),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(folderApps) { app ->
+                                var showAppMenu by remember { mutableStateOf(false) }
+                                val iconRoundness by viewModel.iconRoundness.collectAsState()
+                                val iconSizeScale by viewModel.iconSizeScale.collectAsState()
+                                val fontSizeSp by viewModel.fontSizeSp.collectAsState()
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pointerInput(app) {
+                                            detectTapGestures(
+                                                onTap = {
+                                                    viewModel.recordAppLaunch(app.packageName)
+                                                    app.launch(context)
+                                                    activeOpenedFolder = null
+                                                    onClose()
+                                                },
+                                                onLongPress = {
+                                                    showAppMenu = true
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        val filter by viewModel.iconPackFilter.collectAsState()
+                                        IconStylingCard(
+                                            app = app,
+                                            filter = filter,
+                                            themeColor = themeColor,
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .scale(iconSizeScale / 100f),
+                                            roundness = iconRoundness
+                                        )
+                                        if (showLabels) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = app.label,
+                                                color = Color.White,
+                                                fontSize = fontSizeSp.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showAppMenu,
+                                        onDismissRequest = { showAppMenu = false },
+                                        modifier = Modifier.background(Color(0xFF222222))
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("移出本文件夹", color = Color.White) },
+                                            onClick = {
+                                                viewModel.removeAppFromDrawerFolder(folder.id, app.packageName)
+                                                showToast("已将 ${app.label} 移出文件夹")
+                                                showAppMenu = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("置顶显示", color = Color.White) },
+                                            onClick = {
+                                                val list = folder.packageNames.toMutableList()
+                                                list.remove(app.packageName)
+                                                list.add(0, app.packageName)
+                                                folder.packageNames.clear()
+                                                folder.packageNames.addAll(list)
+                                                viewModel.prefs.saveDrawerFolders(foldersList)
+                                                viewModel.drawerFolders.value = foldersList.toList()
+                                                showToast("置顶成功")
+                                                showAppMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clickable { showAppsSelector = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Add, null, tint = Color.White)
+                                        }
+                                        if (showLabels) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("添加应用", color = Color.Gray, fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { activeOpenedFolder = null }) {
+                        Text("关闭", color = themeColor)
+                    }
+                }
+            )
+
+            if (showAppsSelector) {
+                AlertDialog(
+                    onDismissRequest = { showAppsSelector = false },
+                    title = { Text("添加/移除文件夹应用", color = Color.White) },
+                    containerColor = Color(0xFF2E2E2E),
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth().height(350.dp)) {
+                            Text("勾选应用归入本文件夹（未勾选的应用会被移出此文件夹）：", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
+                            
+                            val availableAppsSorted = rawAppList.sortedBy { it.label.lowercase() }
+                            LazyColumn(modifier = Modifier.weight(1f)) {
+                                items(availableAppsSorted) { app ->
+                                    val isChecked = folder.packageNames.contains(app.packageName)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (isChecked) {
+                                                    viewModel.removeAppFromDrawerFolder(folder.id, app.packageName)
+                                                } else {
+                                                    viewModel.addAppToDrawerFolder(folder.id, app.packageName)
+                                                }
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            IconStylingCard(
+                                                app = app,
+                                                filter = "Raw Native",
+                                                themeColor = themeColor,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(app.label, color = Color.White, fontSize = 13.sp)
+                                        }
+                                        Checkbox(
+                                            checked = isChecked,
+                                            onCheckedChange = { checked ->
+                                                if (isChecked) {
+                                                    viewModel.removeAppFromDrawerFolder(folder.id, app.packageName)
+                                                } else {
+                                                    viewModel.addAppToDrawerFolder(folder.id, app.packageName)
+                                                }
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = themeColor)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { showAppsSelector = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                        ) {
+                            Text("完成", color = Color.Black)
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    if (showRenameFolderDialog != null) {
+        val renameTarget = showRenameFolderDialog!!
+        var renameInput by remember { mutableStateOf(renameTarget.name) }
+        AlertDialog(
+            onDismissRequest = { showRenameFolderDialog = null },
+            title = { Text("重命名文件夹", color = Color.White) },
+            containerColor = Color(0xFF1E1E1E),
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = themeColor),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameInput.trim().isNotEmpty()) {
+                            viewModel.renameDrawerFolder(renameTarget.id, renameInput.trim())
+                        }
+                        showRenameFolderDialog = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) {
+                    Text("保存", color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameFolderDialog = null }) {
+                    Text("取消", color = themeColor)
+                }
+            }
+        )
+    }
 }
+
 
 // 1. Applications single page grid with dynamic proportional cell spacing based on screen height
 @OptIn(ExperimentalFoundationApi::class)
@@ -666,11 +1263,13 @@ fun SingleAppsPageGrid(
     themeColor: Color,
     showLabels: Boolean,
     gridMode: String,
-    displayApps: List<AppModel>,
+    displayApps: List<DrawerItem>,
     pageIdx: Int,
     itemsPerPage: Int,
     iconFilter: String,
     onAppLongClicked: (AppModel) -> Unit,
+    onFolderClicked: (DrawerFolder) -> Unit,
+    onRenameFolderRequested: (DrawerFolder) -> Unit,
     onDrop: () -> Unit
 ) {
     val context = LocalContext.current
@@ -690,118 +1289,231 @@ fun SingleAppsPageGrid(
         return
     }
     
-    val pageApps = displayApps.subList(startIdx, endIdx)
+    val pageItems = displayApps.subList(startIdx, endIdx)
     val cols = if (gridMode == "5x5") 5 else 4
     val rows = if (gridMode == "5x5") 5 else 6
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Compute dynamically scaled cell heights to fit perfectly without overflow or wasted bottom space
         val usableHeight = maxHeight - 24.dp
         val cellHeight = if (usableHeight > 100.dp) usableHeight / rows else 88.dp
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(cols),
-            userScrollEnabled = false, // 👈 Disable vertical bounce/scrolling entirely
+            userScrollEnabled = false,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 8.dp),
             contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp)
         ) {
-            itemsIndexed(pageApps) { localIndex, app ->
+            itemsIndexed(pageItems) { localIndex, drawerItem ->
                 val globalIdx = startIdx + localIndex
                 var itemScreenX by remember { mutableStateOf(0f) }
                 var itemScreenY by remember { mutableStateOf(0f) }
 
-                val preUninstallApp by viewModel.preUninstallApp.collectAsState()
-                val isPreUninstall = preUninstallApp?.packageName == app.packageName
+                when (drawerItem) {
+                    is DrawerItem.App -> {
+                        val app = drawerItem.app
+                        val preUninstallApp by viewModel.preUninstallApp.collectAsState()
+                        val isPreUninstall = preUninstallApp?.packageName == app.packageName
 
-                Box(
-                    contentAlignment = Alignment.TopEnd,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(cellHeight) // 📊 Auto-matching responsive cellular heights
-                        .onGloballyPositioned { bounds ->
-                            val coords = bounds.positionInWindow()
-                            itemScreenX = coords.x / density
-                            itemScreenY = coords.y / density
-                            val w = bounds.size.width / density
-                            val h = bounds.size.height / density
-                            viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to androidx.compose.ui.geometry.Rect(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
-                        }
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(app) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { localOffset ->
-                                        viewModel.draggedApp = app
-                                        viewModel.isDraggingActive = true
-                                        viewModel.isDraggingFromDock = false
-                                        viewModel.isDraggingFromDrawer = true
-                                        viewModel.dragSourceIndex = -1
-                                        viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
-                                            x = itemScreenX + 26f,
-                                            y = itemScreenY + 26f
+                        Box(
+                            contentAlignment = Alignment.TopEnd,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(cellHeight)
+                                .onGloballyPositioned { bounds ->
+                                    val coords = bounds.positionInWindow()
+                                    itemScreenX = coords.x / density
+                                    itemScreenY = coords.y / density
+                                    val w = bounds.size.width / density
+                                    val h = bounds.size.height / density
+                                    viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to androidx.compose.ui.geometry.Rect(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
+                                }
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(app) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { localOffset ->
+                                                viewModel.draggedApp = app
+                                                viewModel.isDraggingActive = true
+                                                viewModel.isDraggingFromDock = false
+                                                viewModel.isDraggingFromDrawer = true
+                                                viewModel.dragSourceIndex = -1
+                                                viewModel.dragOffset = androidx.compose.ui.geometry.Offset(
+                                                    x = itemScreenX + 26f,
+                                                    y = itemScreenY + 26f
+                                                )
+                                                viewModel.dragDistance = -1f
+                                                viewModel.preUninstallApp.value = null
+                                            },
+                                            onDragEnd = {},
+                                            onDragCancel = {},
+                                            onDrag = { change, dragAmount -> change.consume() }
                                         )
-                                        viewModel.dragDistance = -1f
-                                        viewModel.preUninstallApp.value = null
-                                    },
-                                    onDragEnd = {
-                                        // Handled globally
-                                    },
-                                    onDragCancel = {
-                                        // Handled globally
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
+                                    }
+                                    .clickable {
+                                        viewModel.recordAppLaunch(app.packageName)
+                                        app.launch(context)
+                                    }
+                            ) {
+                                val iconRoundness by viewModel.iconRoundness.collectAsState()
+                                val iconSizeScale by viewModel.iconSizeScale.collectAsState()
+                                val fontSizeSp by viewModel.fontSizeSp.collectAsState()
+
+                                IconStylingCard(
+                                    app = app,
+                                    filter = iconFilter,
+                                    themeColor = themeColor,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .scale(iconSizeScale / 100f),
+                                    roundness = iconRoundness
+                                )
+                                
+                                if (showLabels) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = app.label,
+                                        color = Color.White.copy(alpha = 0.9f),
+                                        fontSize = fontSizeSp.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+                                }
+                            }
+
+                            if (isPreUninstall) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 4.dp, top = 2.dp)
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFE53935))
+                                        .clickable {
+                                            viewModel.uninstallApp(context, app)
+                                            viewModel.preUninstallApp.value = null
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Uninstall",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    is DrawerItem.Folder -> {
+                        val folder = drawerItem.folder
+                        var showFolderMenu by remember { mutableStateOf(false) }
+
+                        Box(
+                            contentAlignment = Alignment.TopEnd,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(cellHeight)
+                                .onGloballyPositioned { bounds ->
+                                    val coords = bounds.positionInWindow()
+                                    itemScreenX = coords.x / density
+                                    itemScreenY = coords.y / density
+                                    val w = bounds.size.width / density
+                                    val h = bounds.size.height / density
+                                    viewModel.drawerItemBounds = viewModel.drawerItemBounds + (globalIdx to androidx.compose.ui.geometry.Rect(itemScreenX, itemScreenY, itemScreenX + w, itemScreenY + h))
+                                }
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(folder) {
+                                        detectTapGestures(
+                                            onTap = {
+                                                onFolderClicked(folder)
+                                            },
+                                            onLongPress = {
+                                                showFolderMenu = true
+                                            }
+                                        )
+                                    }
+                            ) {
+                                val iconRoundness by viewModel.iconRoundness.collectAsState()
+                                val iconSizeScale by viewModel.iconSizeScale.collectAsState()
+                                val fontSizeSp by viewModel.fontSizeSp.collectAsState()
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .scale(iconSizeScale / 100f)
+                                        .clip(RoundedCornerShape(iconRoundness.dp))
+                                        .background(Color.White.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val rawList by viewModel.appList.collectAsState()
+                                    val miniApps = folder.packageNames.take(4).mapNotNull { pkg -> rawList.firstOrNull { it.packageName == pkg } }
+
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(2),
+                                        modifier = Modifier.padding(4.dp).fillMaxSize(),
+                                        userScrollEnabled = false,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        items(miniApps) { miniApp ->
+                                            IconStylingCard(
+                                                app = miniApp,
+                                                filter = "Raw Native",
+                                                themeColor = themeColor,
+                                                modifier = Modifier.fillMaxSize(),
+                                                roundness = iconRoundness
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (showLabels) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = folder.name,
+                                        color = Color.White.copy(alpha = 0.9f),
+                                        fontSize = fontSizeSp.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showFolderMenu,
+                                onDismissRequest = { showFolderMenu = false },
+                                modifier = Modifier.background(Color(0xFF222222))
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("重命名文件夹", color = Color.White) },
+                                    onClick = {
+                                        onRenameFolderRequested(folder)
+                                        showFolderMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("解散文件夹", color = Color.White) },
+                                    onClick = {
+                                        viewModel.deleteDrawerFolder(folder.id)
+                                        android.widget.Toast.makeText(context, "已解散「${folder.name}」", android.widget.Toast.LENGTH_SHORT).show()
+                                        showFolderMenu = false
                                     }
                                 )
                             }
-                            .clickable { app.launch(context) }
-                    ) {
-                        IconStylingCard(
-                            app = app,
-                            filter = iconFilter,
-                            themeColor = themeColor,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        
-                        if (showLabels) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = app.label,
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                        }
-                    }
-
-                    if (isPreUninstall) {
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 4.dp, top = 2.dp)
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFE53935))
-                                .clickable {
-                                    viewModel.uninstallApp(context, app)
-                                    viewModel.preUninstallApp.value = null
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Uninstall",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
                         }
                     }
                 }
@@ -816,11 +1528,12 @@ fun IconStylingCard(
     app: AppModel,
     filter: String,
     themeColor: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    roundness: Int = 12
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(roundness.dp))
             .background(
                 when (filter) {
                     "Vintage Pixel" -> Color(0xFFE2E8F0) // retro matte card

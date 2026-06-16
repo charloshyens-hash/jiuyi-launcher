@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -215,6 +216,81 @@ fun LauncherHomeScreen(
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isGesturePanelOpen by remember { mutableStateOf(false) }
     var isAddScreenOpen by remember { mutableStateOf(false) }
+    var isEffectSystemOpen by remember { mutableStateOf(false) }
+
+    val globalParticles = remember { mutableStateListOf<TouchParticle>() }
+    val selectedTouchEffect by viewModel.touchEffect.collectAsState()
+    val touchPool by viewModel.touchRandomPool.collectAsState()
+
+    val selectedCrossTransition by viewModel.crossTransition.collectAsState()
+    val crossPool by viewModel.crossRandomPool.collectAsState()
+
+    val crossProgress by animateFloatAsState(
+        targetValue = if (isAppDrawerOpen) 1f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "crossProgress"
+    )
+
+    val activeCrossType = remember(selectedCrossTransition, crossPool, isAppDrawerOpen) {
+        if (selectedCrossTransition == "随机") {
+            val pool = crossPool.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            if (pool.isNotEmpty()) {
+                val seed = if (isAppDrawerOpen) 1 else 0
+                pool[seed % pool.size]
+            } else "默认"
+        } else {
+            selectedCrossTransition
+        }
+    }
+
+    val effectSystemOffset by animateDpAsState(
+        targetValue = if (isEffectSystemOpen) 0.dp else 1200.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "effectSystem"
+    )
+
+    LaunchedEffect(globalParticles.size) {
+        if (globalParticles.isNotEmpty()) {
+            var lastTime = System.nanoTime()
+            while (globalParticles.isNotEmpty()) {
+                withFrameNanos { frameTime ->
+                    val dt = ((frameTime - lastTime) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                    lastTime = frameTime
+                    val iterator = globalParticles.listIterator()
+                    while (iterator.hasNext()) {
+                        val p = iterator.next()
+                        val nextLife = p.life - dt / p.maxLife
+                        if (nextLife <= 0f) {
+                            iterator.remove()
+                        } else {
+                            val nextVy = if (p.type == "balloon" || p.type == "butterfly") {
+                                p.vy - 0.4f * dt
+                            } else if (p.type == "money" || p.type == "confetti") {
+                                p.vy + 0.15f * dt
+                            } else {
+                                p.vy + 3.5f * dt
+                            }
+                            
+                            val drift = if (p.type == "balloon" || p.type == "butterfly" || p.type == "money" || p.type == "confetti") {
+                                Math.sin(nextLife * 12.0 + p.id).toFloat() * 1.5f
+                            } else 0f
+                            
+                            iterator.set(
+                                p.copy(
+                                    x = p.x + (p.vx + drift) * 100f * dt,
+                                    y = p.y + nextVy * 100f * dt,
+                                    vy = nextVy,
+                                    life = nextLife,
+                                    alpha = nextLife,
+                                    extra = p.extra + p.vx * dt * 4f
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     val wallpaperName by viewModel.wallpaperName.collectAsState()
     val clockStyle by viewModel.clockStyle.collectAsState()
@@ -466,8 +542,14 @@ fun LauncherHomeScreen(
     }
 
     val preUninstallApp by viewModel.preUninstallApp.collectAsState()
-    BackHandler(enabled = isAppDrawerOpen || isSettingsOpen || isGesturePanelOpen || preUninstallApp != null || viewModel.isEditingHomeScreen) {
+    BackHandler(enabled = isAppDrawerOpen || isSettingsOpen || isGesturePanelOpen || preUninstallApp != null || viewModel.isEditingHomeScreen || isAddScreenOpen || isEffectSystemOpen) {
         when {
+            isEffectSystemOpen -> {
+                isEffectSystemOpen = false
+            }
+            isAddScreenOpen -> {
+                isAddScreenOpen = false
+            }
             viewModel.preUninstallApp.value != null -> {
                 viewModel.preUninstallApp.value = null
             }
@@ -490,9 +572,27 @@ fun LauncherHomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(selectedTouchEffect, touchPool) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    spawnTouchParticles(
+                        x = down.position.x,
+                        y = down.position.y,
+                        effectType = selectedTouchEffect,
+                        randomPool = touchPool,
+                        activeParticles = globalParticles
+                    )
+                }
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     while (true) {
+                        // ✅ 修复：isAddScreenOpen 时退出循环，完全不拦截内层手势
+                        if (isAddScreenOpen) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                            continue
+                        }
+
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         if (viewModel.isDraggingActive) {
                             val change = event.changes.firstOrNull()
@@ -592,6 +692,44 @@ fun LauncherHomeScreen(
                         } while (event.changes.any { it.pressed })
                     }
                 }
+                .graphicsLayer {
+                    val progress = crossProgress // 0 is Home, 1 is App Drawer
+                    alpha = (1f - progress)
+                    cameraDistance = 8f * this.density
+                    
+                    if (progress > 0f) {
+                        when (activeCrossType) {
+                            "默认" -> {
+                                alpha = 1f
+                            }
+                            "内缩放" -> {
+                                val s = 1f + progress * 0.4f
+                                scaleX = s
+                                scaleY = s
+                            }
+                            "外缩放" -> {
+                                val s = 1f - progress * 0.4f
+                                scaleX = s
+                                scaleY = s
+                            }
+                            "风车" -> {
+                                val s = 1f - progress
+                                scaleX = s
+                                scaleY = s
+                                rotationZ = -(progress * 180f)
+                            }
+                            "电视机" -> {
+                                val tvProgress = (1f - progress)
+                                scaleX = if (tvProgress > 0.5f) 1f else tvProgress * 2f
+                                scaleY = if (tvProgress < 0.5f) 0.05f else (tvProgress - 0.5f) * 2f
+                            }
+                        }
+                    } else {
+                        scaleX = 1f
+                        scaleY = 1f
+                        rotationZ = 0f
+                    }
+                }
         ) {
             val pagerState = rememberPagerState(
                 initialPage = activePageIndex.coerceIn(0, maxOf(1, homePages.size) - 1),
@@ -621,9 +759,20 @@ fun LauncherHomeScreen(
                     modifier = Modifier.weight(1f)
                 ) { idx ->
                     val page = homePages.getOrNull(idx) ?: HomeScreenPage(idx.toString())
+                    val pageOffset = (pagerState.currentPage - idx) + pagerState.currentPageOffsetFraction
+                    val selectedHomeTransition by viewModel.homeTransition.collectAsState()
+                    val homePool by viewModel.homeRandomPool.collectAsState()
+
                     // ── 修复核心：移除 verticalScroll，改为不可滚动的固定 Column ──────
                     Column(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pagerTransition(
+                                pageOffset = pageOffset,
+                                effect = selectedHomeTransition,
+                                randomPool = homePool,
+                                pageIndex = idx
+                            ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Top
                     ) {
@@ -723,7 +872,10 @@ fun LauncherHomeScreen(
                                                             itemScreenX = coords.x / densityVal
                                                             itemScreenY = coords.y / densityVal
                                                         }
-                                                        .clickable { app.launch(context) }
+                                                        .clickable {
+                                                            viewModel.recordAppLaunch(app.packageName)
+                                                            app.launch(context)
+                                                        }
                                                         .pointerInput(app) {
                                                             detectDragGesturesAfterLongPress(
                                                                 onDragStart = { localOffset ->
@@ -852,7 +1004,45 @@ fun LauncherHomeScreen(
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 18.dp, start = 12.dp, end = 12.dp),
+                .padding(bottom = 18.dp, start = 12.dp, end = 12.dp)
+                .graphicsLayer {
+                    val progress = crossProgress // 0 is Home, 1 is App Drawer
+                    alpha = (1f - progress)
+                    cameraDistance = 8f * this.density
+                    
+                    if (progress > 0f) {
+                        when (activeCrossType) {
+                            "默认" -> {
+                                alpha = 1f
+                            }
+                            "内缩放" -> {
+                                val s = 1f + progress * 0.4f
+                                scaleX = s
+                                scaleY = s
+                            }
+                            "外缩放" -> {
+                                val s = 1f - progress * 0.4f
+                                scaleX = s
+                                scaleY = s
+                            }
+                            "风车" -> {
+                                val s = 1f - progress
+                                scaleX = s
+                                scaleY = s
+                                rotationZ = -(progress * 180f)
+                            }
+                            "电视机" -> {
+                                val tvProgress = (1f - progress)
+                                scaleX = if (tvProgress > 0.5f) 1f else tvProgress * 2f
+                                scaleY = if (tvProgress < 0.5f) 0.05f else (tvProgress - 0.5f) * 2f
+                            }
+                        }
+                    } else {
+                        scaleX = 1f
+                        scaleY = 1f
+                        rotationZ = 0f
+                    }
+                },
             contentAlignment = Alignment.BottomCenter
         ) {
             Card(
@@ -1021,8 +1211,8 @@ fun LauncherHomeScreen(
                             },
                             GestureMenuOption("换特效", Icons.Default.AutoAwesome) {
                                 isGesturePanelOpen = false
-                                isSettingsOpen = true
-                                showToast("壁纸动力学特效设置已开启")
+                                isEffectSystemOpen = true
+                                showToast("Launcher 动效引擎已开启")
                             },
                             GestureMenuOption("快速美化", Icons.Default.Brush) {
                                 isGesturePanelOpen = false
@@ -1113,33 +1303,90 @@ fun LauncherHomeScreen(
             label = "drawerAlpha"
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .offset(y = appDrawerOffset)
-                .alpha(drawerAlpha)
-        ) {
-            LauncherAppDrawer(
-                viewModel = viewModel,
-                themeColor = themeColor,
-                onClose = { isAppDrawerOpen = false },
-                showToast = showToast,
-                pinnedWidgets = homePages.getOrNull(activePageIndex)?.widgets?.toSet() ?: emptySet(),
-                onPinWidgetToggle = { widgetName ->
-                    val activePage = homePages.getOrNull(activePageIndex)
-                    if (activePage != null) {
-                        if (activePage.widgets.contains(widgetName)) {
-                            viewModel.removeWidgetFromPage(activePageIndex, widgetName)
-                            showToast("已在桌面主屏移除: $widgetName")
+        val isDefaultCross = activeCrossType == "默认"
+        val showDrawer = isAppDrawerOpen || if (isDefaultCross) {
+            appDrawerOffset < 1180.dp
+        } else {
+            crossProgress > 0.05f
+        }
+
+        if (showDrawer) {
+            val drawerOffsetY = if (isAppDrawerOpen) {
+                0.dp
+            } else {
+                if (isDefaultCross) {
+                    if (appDrawerOffset >= 1180.dp) 5000.dp else 0.dp
+                } else {
+                    if (crossProgress <= 0.05f) 5000.dp else 0.dp
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset(y = drawerOffsetY)
+                    .graphicsLayer {
+                        val progress = crossProgress // 0 is Home, 1 is App Drawer
+                        cameraDistance = 8f * this.density
+                        
+                        if (isDefaultCross) {
+                            translationY = appDrawerOffset.toPx()
+                            alpha = drawerAlpha
                         } else {
-                            viewModel.addWidgetToPage(activePageIndex, widgetName)
-                            showToast("已成功贴合至第 ${activePageIndex + 1} 页主屏: $widgetName")
+                            alpha = progress
+                            if (progress > 0f) {
+                                when (activeCrossType) {
+                                    "内缩放" -> {
+                                        val s = 0.6f + progress * 0.4f
+                                        scaleX = s
+                                        scaleY = s
+                                    }
+                                    "外缩放" -> {
+                                        val s = 1.4f - progress * 0.4f
+                                        scaleX = s
+                                        scaleY = s
+                                    }
+                                    "风车" -> {
+                                        val s = progress
+                                        scaleX = s
+                                        scaleY = s
+                                        rotationZ = (1f - progress) * 180f
+                                    }
+                                    "电视机" -> {
+                                        scaleX = if (progress > 0.5f) 1f else progress * 2f
+                                        scaleY = if (progress < 0.5f) 0.05f else (progress - 0.5f) * 2f
+                                    }
+                                }
+                            } else {
+                                scaleX = 1f
+                                scaleY = 1f
+                                rotationZ = 0f
+                            }
                         }
                     }
-                    isAppDrawerOpen = false
-                },
-                onDrop = handleGlobalDrop
-            )
+            ) {
+                LauncherAppDrawer(
+                    viewModel = viewModel,
+                    themeColor = themeColor,
+                    onClose = { isAppDrawerOpen = false },
+                    showToast = showToast,
+                    pinnedWidgets = homePages.getOrNull(activePageIndex)?.widgets?.toSet() ?: emptySet(),
+                    onPinWidgetToggle = { widgetName ->
+                        val activePage = homePages.getOrNull(activePageIndex)
+                        if (activePage != null) {
+                            if (activePage.widgets.contains(widgetName)) {
+                                viewModel.removeWidgetFromPage(activePageIndex, widgetName)
+                                showToast("已在桌面主屏移除: $widgetName")
+                            } else {
+                                viewModel.addWidgetToPage(activePageIndex, widgetName)
+                                showToast("已成功贴合至第 ${activePageIndex + 1} 页主屏: $widgetName")
+                            }
+                        }
+                        isAppDrawerOpen = false
+                    },
+                    onDrop = handleGlobalDrop
+                )
+            }
         }
 
         Box(
@@ -1266,6 +1513,26 @@ fun LauncherHomeScreen(
                 onClose = { isAddScreenOpen = false },
                 showToast = showToast,
                 onDrop = handleGlobalDrop
+            )
+        }
+
+        Canvas(modifier = Modifier.fillMaxSize().alpha(1f)) {
+            val drawScope: androidx.compose.ui.graphics.drawscope.DrawScope = this
+            globalParticles.forEach { p ->
+                drawParticleOnCanvas(p, drawScope)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(y = effectSystemOffset)
+        ) {
+            LauncherAnimationCenter(
+                viewModel = viewModel,
+                themeColor = themeColor,
+                onClose = { isEffectSystemOpen = false },
+                showToast = showToast
             )
         }
 

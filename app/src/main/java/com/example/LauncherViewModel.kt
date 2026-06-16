@@ -26,6 +26,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+sealed class DrawerItem {
+    data class App(val app: AppModel) : DrawerItem() {
+        val packageName: String get() = app.packageName
+        val label: String get() = app.label
+    }
+    data class Folder(val folder: DrawerFolder) : DrawerItem() {
+        val folderId: String get() = folder.id
+        val name: String get() = folder.name
+    }
+}
+
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
 
     val prefs = LauncherPrefs(application)
@@ -45,7 +56,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val drawerGrid = MutableStateFlow(prefs.drawerGrid)
     val iconPackFilter = MutableStateFlow(prefs.iconPackFilter)
 
+    val touchEffect = MutableStateFlow(prefs.touchEffect)
+    val homeTransition = MutableStateFlow(prefs.homeTransition)
+    val drawerTransition = MutableStateFlow(prefs.drawerTransition)
+    val crossTransition = MutableStateFlow(prefs.crossTransition)
+    val touchRandomPool = MutableStateFlow(prefs.touchRandomPool)
+    val homeRandomPool = MutableStateFlow(prefs.homeRandomPool)
+    val drawerRandomPool = MutableStateFlow(prefs.drawerRandomPool)
+    val crossRandomPool = MutableStateFlow(prefs.crossRandomPool)
+
     val searchQuery = MutableStateFlow("")
+    val iconRoundness = MutableStateFlow(prefs.iconRoundness)
+    val iconSizeScale = MutableStateFlow(prefs.iconSizeScale)
+    val fontSizeSp = MutableStateFlow(prefs.fontSizeSp)
+    val drawerSortType = MutableStateFlow(prefs.drawerSortType)
+    val drawerFolders = MutableStateFlow<List<DrawerFolder>>(prefs.getDrawerFolders())
     val drawerPageIndex = MutableStateFlow(0)
     val appsGridPageIndex = MutableStateFlow(0)
 
@@ -723,9 +748,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     val hiddenPackagesFlow = MutableStateFlow<Set<String>>(prefs.hiddenPackages)
 
-    val filteredApps: StateFlow<List<AppModel>> = combine(
-        _appList, searchQuery, hiddenPackagesFlow, showSystemApps, drawerPackageOrder
-    ) { apps, query, hidden, showSys, order ->
+    val filteredApps: StateFlow<List<DrawerItem>> = combine(
+        _appList, searchQuery, hiddenPackagesFlow, showSystemApps, drawerSortType, drawerFolders
+    ) { array ->
+        @Suppress("UNCHECKED_CAST")
+        val apps = array[0] as List<AppModel>
+        val query = array[1] as String
+        @Suppress("UNCHECKED_CAST")
+        val hidden = array[2] as Set<String>
+        val showSys = array[3] as Boolean
+        val sortType = array[4] as Int
+        @Suppress("UNCHECKED_CAST")
+        val folders = array[5] as List<DrawerFolder>
+
         val filtered = apps.filter { app ->
             val matchesSys = showSys || !app.isSystem
             val isNotHidden = !hidden.contains(app.packageName) || query.isNotEmpty()
@@ -734,9 +769,53 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 app.packageName.contains(query, ignoreCase = true)
             matchesSys && isNotHidden && matchesQuery
         }
-        filtered.sortedBy { app ->
-            val idx = order.indexOf(app.packageName)
-            if (idx != -1) idx else Int.MAX_VALUE
+
+        val launchCounts = prefs.getAppLaunchCounts()
+        val context = getApplication<Application>()
+        val pm = context.packageManager
+
+        // All packages inside any folder
+        val folderedPackages = if (query.isEmpty()) {
+            folders.flatMap { it.packageNames }.toSet()
+        } else {
+            emptySet()
+        }
+
+        val rootApps = filtered.filter { !folderedPackages.contains(it.packageName) }
+
+        fun getAppSortKey(app: AppModel): Comparable<*> {
+            return when (sortType) {
+                0 -> app.label.lowercase()
+                1 -> {
+                    val installTime = try {
+                        pm.getPackageInfo(app.packageName, 0).firstInstallTime
+                    } catch (e: Exception) { 0L }
+                    -installTime
+                }
+                2 -> {
+                    val installTime = try {
+                        pm.getPackageInfo(app.packageName, 0).firstInstallTime
+                    } catch (e: Exception) { 0L }
+                    installTime
+                }
+                3 -> {
+                    val count = launchCounts[app.packageName] ?: 0
+                    -count
+                }
+                else -> app.label.lowercase()
+            }
+        }
+
+        val sortedRootApps = rootApps.sortedWith(compareBy { getAppSortKey(it) })
+
+        if (query.isEmpty()) {
+            val sortedFolders = folders.sortedBy { it.name.lowercase() }
+            val list = mutableListOf<DrawerItem>()
+            sortedFolders.forEach { list.add(DrawerItem.Folder(it)) }
+            sortedRootApps.forEach { list.add(DrawerItem.App(it)) }
+            list
+        } else {
+            sortedRootApps.map { DrawerItem.App(it) }
         }
     }.stateIn(
         scope = viewModelScope,
@@ -858,13 +937,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun reorderDrawerApp(packageName: String, targetGlobalIndex: Int) {
-        val current = drawerPackageOrder.value.toMutableList()
-        val existingIndex = current.indexOf(packageName)
-        if (existingIndex != -1) {
-            current.removeAt(existingIndex)
-            val safeTarget = targetGlobalIndex.coerceIn(0, current.size)
-            current.add(safeTarget, packageName)
-            saveDrawerPackageOrder(current)
+        val items = filteredApps.value
+        val targetItem = items.getOrNull(targetGlobalIndex)
+        if (targetItem is DrawerItem.Folder) {
+            addAppToDrawerFolder(targetItem.folder.id, packageName)
+        } else {
+            val current = drawerPackageOrder.value.toMutableList()
+            val existingIndex = current.indexOf(packageName)
+            if (existingIndex != -1) {
+                current.removeAt(existingIndex)
+                val safeTarget = targetGlobalIndex.coerceIn(0, current.size)
+                current.add(safeTarget, packageName)
+                saveDrawerPackageOrder(current)
+            }
         }
     }
 
@@ -968,6 +1053,59 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun toggleShowSystemApps() { val v = !prefs.showSystemApps; prefs.showSystemApps = v; showSystemApps.value = v }
     fun updateDrawerGrid(grid: String)     { prefs.drawerGrid = grid;         drawerGrid.value = grid }
     fun updateIconPackFilter(pack: String) { prefs.iconPackFilter = pack;     iconPackFilter.value = pack }
+
+    fun updateTouchEffect(effect: String) { prefs.touchEffect = effect; touchEffect.value = effect }
+    fun updateHomeTransition(trans: String) { prefs.homeTransition = trans; homeTransition.value = trans }
+    fun updateDrawerTransition(trans: String) { prefs.drawerTransition = trans; drawerTransition.value = trans }
+    fun updateCrossTransition(trans: String) { prefs.crossTransition = trans; crossTransition.value = trans }
+
+    fun toggleTouchRandomPool(effect: String) {
+        val currentList = prefs.touchRandomPool.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        if (currentList.contains(effect)) {
+            currentList.remove(effect)
+        } else {
+            currentList.add(effect)
+        }
+        val newVal = currentList.joinToString(",")
+        prefs.touchRandomPool = newVal
+        touchRandomPool.value = newVal
+    }
+
+    fun toggleHomeRandomPool(trans: String) {
+        val currentList = prefs.homeRandomPool.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        if (currentList.contains(trans)) {
+            currentList.remove(trans)
+        } else {
+            currentList.add(trans)
+        }
+        val newVal = currentList.joinToString(",")
+        prefs.homeRandomPool = newVal
+        homeRandomPool.value = newVal
+    }
+
+    fun toggleDrawerRandomPool(trans: String) {
+        val currentList = prefs.drawerRandomPool.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        if (currentList.contains(trans)) {
+            currentList.remove(trans)
+        } else {
+            currentList.add(trans)
+        }
+        val newVal = currentList.joinToString(",")
+        prefs.drawerRandomPool = newVal
+        drawerRandomPool.value = newVal
+    }
+
+    fun toggleCrossRandomPool(trans: String) {
+        val currentList = prefs.crossRandomPool.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        if (currentList.contains(trans)) {
+            currentList.remove(trans)
+        } else {
+            currentList.add(trans)
+        }
+        val newVal = currentList.joinToString(",")
+        prefs.crossRandomPool = newVal
+        crossRandomPool.value = newVal
+    }
 
     fun toggleHiddenPackage(packageName: String) {
         prefs.toggleHiddenPackage(packageName)
@@ -1285,5 +1423,147 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
         // 无论成功与否，都重新扫描系统应用列表确保同步
         refreshInstalledApps()
+    }
+
+    // --- Dynamic Folder and Categorizations (V2) ---
+    fun recordAppLaunch(packageName: String) {
+        val current = prefs.getAppLaunchCounts().toMutableMap()
+        current[packageName] = (current[packageName] ?: 0) + 1
+        prefs.saveAppLaunchCounts(current)
+        drawerSortType.value = prefs.drawerSortType
+    }
+
+    fun updateIconRoundness(value: Int) {
+        prefs.iconRoundness = value
+        iconRoundness.value = value
+    }
+
+    fun updateIconSizeScale(value: Int) {
+        prefs.iconSizeScale = value
+        iconSizeScale.value = value
+    }
+
+    fun updateFontSizeSp(value: Int) {
+        prefs.fontSizeSp = value
+        fontSizeSp.value = value
+    }
+
+    fun updateDrawerSortType(value: Int) {
+        prefs.drawerSortType = value
+        drawerSortType.value = value
+    }
+
+    fun createDrawerFolder(name: String = "新建文件夹") {
+        val current = prefs.getDrawerFolders().toMutableList()
+        val uniqueId = "folder_" + java.util.UUID.randomUUID().toString()
+        current.add(DrawerFolder(uniqueId, name, mutableListOf()))
+        prefs.saveDrawerFolders(current)
+        drawerFolders.value = current
+    }
+
+    fun renameDrawerFolder(folderId: String, newName: String) {
+        val current = prefs.getDrawerFolders().toMutableList()
+        val target = current.find { it.id == folderId }
+        if (target != null) {
+            target.name = newName
+            prefs.saveDrawerFolders(current)
+            drawerFolders.value = current
+        }
+    }
+
+    fun deleteDrawerFolder(folderId: String) {
+        val current = prefs.getDrawerFolders().toMutableList()
+        current.removeAll { it.id == folderId }
+        prefs.saveDrawerFolders(current)
+        drawerFolders.value = current
+    }
+
+    fun addAppToDrawerFolder(folderId: String, packageName: String) {
+        val current = prefs.getDrawerFolders().toMutableList()
+        current.forEach { folder ->
+            folder.packageNames.remove(packageName)
+        }
+        val target = current.find { it.id == folderId }
+        if (target != null) {
+            if (!target.packageNames.contains(packageName)) {
+                target.packageNames.add(packageName)
+            }
+            prefs.saveDrawerFolders(current)
+            drawerFolders.value = current
+        }
+    }
+
+    fun removeAppFromDrawerFolder(folderId: String, packageName: String) {
+        val current = prefs.getDrawerFolders().toMutableList()
+        val target = current.find { it.id == folderId }
+        if (target != null) {
+            target.packageNames.remove(packageName)
+            prefs.saveDrawerFolders(current)
+            drawerFolders.value = current
+        }
+    }
+
+    fun backupLayoutSnapshot() {
+        prefs.layoutSnapshotRaw = prefs.drawerFoldersRaw
+        prefs.hasLayoutSnapshot = true
+    }
+
+    fun restoreLayoutSnapshot(): Boolean {
+        if (prefs.hasLayoutSnapshot) {
+            val raw = prefs.layoutSnapshotRaw
+            prefs.drawerFoldersRaw = raw
+            drawerFolders.value = prefs.getDrawerFolders()
+            return true
+        }
+        return false
+    }
+
+    fun smartCategorizeApps() {
+        backupLayoutSnapshot()
+        val newFolders = mutableListOf<DrawerFolder>()
+        val apps = _appList.value
+
+        val categories = mapOf(
+            "社交" to listOf("wechat", "qq", "chat", "social", "contact", "phone", "mms", "contacts", "message", "im", "社交", "微信", "腾讯", "微博", "weibo", "talk"),
+            "工具" to listOf("calculator", "files", "document", "weather", "memo", "calendar", "clock", "browser", "search", "desk", "file", "weather", "compass", "map", "tool", "工具", "计算器", "天气", "便签", "时钟", "浏览器"),
+            "游戏" to listOf("game", "play", "arcade", "puzzle", "action", "sport", "racing", "minecraft", "chess", "gaming", "游戏", "娱乐", "竞技", "王者"),
+            "影音" to listOf("music", "video", "camera", "gallery", "tv", "audio", "stream", "netease", "spotify", "youtube", "media", "player", "影音", "音乐", "相册", "相机", "视频", "播放器"),
+            "办公" to listOf("office", "mail", "word", "excel", "pdf", "sheet", "slide", "meeting", "scan", "email", "gmail", "outlook", "wps", "办公", "邮箱", "文档", "扫描"),
+            "系统工具" to listOf("settings", "launcher", "system", "vending", "security", "store", "backup", "manager", "app", "service", "systemui", "系统", "设置", "安全", "管家", "应用市场", "应用商店"),
+            "购物" to listOf("shop", "store", "buy", "mall", "market", "pay", "amazon", "taobao", "jd", "alipay", "购物", "淘宝", "京东", "支付", "美团", "拼多多")
+        )
+
+        val groups = mutableMapOf<String, MutableList<String>>()
+        categories.keys.forEach { groups[it] = mutableListOf() }
+        groups["其他"] = mutableListOf()
+
+        apps.forEach { app ->
+            val key = app.packageName.lowercase() + " " + app.label.lowercase()
+            var matched = false
+            for ((category, keywords) in categories) {
+                if (keywords.any { key.contains(it) }) {
+                     groups[category]?.add(app.packageName)
+                     matched = true
+                     break
+                }
+            }
+            if (!matched) {
+                groups["其他"]?.add(app.packageName)
+            }
+        }
+
+        var cnt = 0
+        groups.forEach { (catName, pkgs) ->
+            if (pkgs.isNotEmpty()) {
+                newFolders.add(DrawerFolder(
+                    id = "folder_smart_" + (cnt++),
+                    name = catName,
+                    packageNames = pkgs.toMutableList()
+                ))
+            }
+        }
+
+        prefs.saveDrawerFolders(newFolders)
+        drawerFolders.value = newFolders
     }
 }
