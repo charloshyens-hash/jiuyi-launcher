@@ -31,11 +31,11 @@ import androidx.compose.ui.window.DialogProperties
 // 内部页面枚举
 // ─────────────────────────────────────────────────────────────────────────────
 private enum class VaultScreen {
-    ENTRY,           // 入口（密码验证或直接进入）
-    MANAGE_HIDE,     // 管理应用隐藏状态
-    VAULT_HOME,      // 隐藏应用主界面
-    SETTINGS,        // 隐藏应用设置
-    SECURITY_QUESTION // 密保问题设置
+    ENTRY,
+    MANAGE_HIDE,
+    VAULT_HOME,
+    SETTINGS,
+    SECURITY_QUESTION
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,9 +52,7 @@ fun AppVaultEntryPoint(
     val vault = remember { AppVaultManager(context) }
 
     var screen by remember { mutableStateOf(VaultScreen.ENTRY) }
-    var unlocked by remember { mutableStateOf(false) }
 
-    // 入口逻辑：有密码 → 先验证；无密码 → 直接进管理页
     LaunchedEffect(Unit) {
         screen = if (vault.hasPassword) VaultScreen.ENTRY else VaultScreen.MANAGE_HIDE
     }
@@ -66,7 +64,6 @@ fun AppVaultEntryPoint(
                 themeColor = themeColor,
                 onDismiss = onDismiss,
                 onVerified = {
-                    unlocked = true
                     val hasHidden = viewModel.hiddenPackagesFlow.value.isNotEmpty()
                     screen = if (hasHidden) VaultScreen.VAULT_HOME else VaultScreen.MANAGE_HIDE
                 }
@@ -77,7 +74,6 @@ fun AppVaultEntryPoint(
                 viewModel = viewModel,
                 themeColor = themeColor,
                 iconPackFilter = iconPackFilter,
-                vault = vault,
                 onCancel = onDismiss,
                 onConfirm = { screen = VaultScreen.VAULT_HOME }
             )
@@ -114,7 +110,7 @@ fun AppVaultEntryPoint(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 密码验证弹窗（有密码时进入 Vault 的门）
+// 密码验证弹窗
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun VaultPasswordVerifyDialog(
@@ -129,32 +125,37 @@ private fun VaultPasswordVerifyDialog(
     VaultDialog(onDismiss = onDismiss) {
         Text("隐藏应用密码", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
-        VaultTextField(value = input, onValueChange = { input = it; error = "" },
-            placeholder = "请输入密码", isPassword = true)
+        VaultTextField(
+            value = input,
+            onValueChange = { input = it; error = "" },
+            placeholder = "请输入密码",
+            isPassword = true
+        )
         if (error.isNotEmpty()) {
             Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp))
         }
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onDismiss,
+            OutlinedButton(
+                onClick = onDismiss,
                 modifier = Modifier.weight(1f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                Text("取消 ❎", color = Color.White)
-            }
-            Button(onClick = {
-                if (vault.verifyPassword(input)) onVerified()
-                else error = "密码错误，请重试"
-            }, modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                Text("确定 ✅", color = Color.Black)
-            }
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) { Text("取消 ❎", color = Color.White) }
+            Button(
+                onClick = {
+                    if (vault.verifyPassword(input)) onVerified()
+                    else error = "密码错误，请重试"
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+            ) { Text("确定 ✅", color = Color.Black) }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 页面1：管理应用隐藏状态
+// 页面1：管理应用隐藏状态（无密码弹窗，直接确认后进入隐藏应用页）
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -162,13 +163,11 @@ private fun ManageHideScreen(
     viewModel: LauncherViewModel,
     themeColor: Color,
     iconPackFilter: String,
-    vault: AppVaultManager,
     onCancel: () -> Unit,
     onConfirm: () -> Unit
 ) {
     val allApps by viewModel.appList.collectAsState()
     val hiddenPkgs by viewModel.hiddenPackagesFlow.collectAsState()
-    // 临时选择状态（未提交）
     var tempSelected by remember { mutableStateOf(hiddenPkgs.toSet()) }
 
     val sorted = remember(allApps) {
@@ -178,31 +177,21 @@ private fun ManageHideScreen(
     val pages = maxOf(1, (sorted.size + itemsPerPage - 1) / itemsPerPage)
     val pagerState = rememberPagerState(pageCount = { pages })
 
-    // 设置密码相关弹窗
-    var showSetPasswordDialog by remember { mutableStateOf(false) }
-    var showPasswordConfirmDialog by remember { mutableStateOf(false) }
-
-    // 首次确定时，若无密码 → 弹设置密码；否则直接确定
-    fun handleConfirm() {
-        // 先提交选择到 ViewModel
-        viewModel.setHiddenPackages(tempSelected)
-        if (!vault.hasPassword) showSetPasswordDialog = true
-        else onConfirm()
-    }
-
     VaultFullScreenDialog(onDismiss = onCancel) {
-        // 标题栏
         VaultTopBar(title = "管理应用隐藏状态", onBack = onCancel, themeColor = themeColor)
-        Text("勾选的应用将在应用列表中隐藏，取消勾选即可恢复显示。",
+        Text(
+            "勾选的应用将在应用列表中隐藏，取消勾选即可恢复显示。",
             color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
 
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
-            val start = page * itemsPerPage
-            val slice = sorted.drop(start).take(itemsPerPage)
+            val slice = sorted.drop(page * itemsPerPage).take(itemsPerPage)
             AppGridSelectable(
-                apps = slice, selected = tempSelected,
-                iconPackFilter = iconPackFilter, themeColor = themeColor,
+                apps = slice,
+                selected = tempSelected,
+                iconPackFilter = iconPackFilter,
+                themeColor = themeColor,
                 onToggle = { pkg ->
                     tempSelected = if (tempSelected.contains(pkg))
                         tempSelected - pkg else tempSelected + pkg
@@ -210,60 +199,29 @@ private fun ManageHideScreen(
             )
         }
 
-        // 分页圆点
         PageDots(pagerState.currentPage, pages, themeColor)
 
-        // 底部按钮
-        Row(modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                Text("取消", color = Color.White)
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier.weight(1f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) { Text("取消", color = Color.White) }
             Button(
-                onClick = { if (tempSelected.isNotEmpty()) handleConfirm() },
+                onClick = {
+                    viewModel.setHiddenPackages(tempSelected)
+                    onConfirm()
+                },
                 enabled = tempSelected.isNotEmpty(),
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = themeColor)
             ) { Text("确定", color = Color.Black) }
         }
-    }
-
-    // 设置密码弹窗
-    if (showSetPasswordDialog) {
-        SetPasswordDialog(
-            vault = vault,
-            themeColor = themeColor,
-            onDismiss = { showSetPasswordDialog = false; onConfirm() },
-            onSuccess = { showSetPasswordDialog = false; showPasswordConfirmDialog = true }
-        )
-    }
-
-    // 密码锁定确认弹窗
-    if (showPasswordConfirmDialog) {
-        VaultDialog(onDismiss = { showPasswordConfirmDialog = false; onConfirm() }) {
-            Text("密码锁定", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            Text("密码设置成功！可设置密保方便您找回密码",
-                color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { showPasswordConfirmDialog = false; onConfirm() },
-                    modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                    Text("不了", color = Color.White)
-                }
-                Button(onClick = { showPasswordConfirmDialog = false; onConfirm() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                    Text("确定", color = Color.Black)
-                }
-            }
-        }
-        // 注：选"确定"后由父层决定是否导航到密保页，此处简化直接进 VaultHome
-        // 如需导航到密保，可在 onConfirm 回调里加条件
     }
 }
 
@@ -289,8 +247,7 @@ private fun VaultHomeScreen(
     }
 
     var showSetPasswordDialog by remember { mutableStateOf(false) }
-    var showPasswordConfirmDialog by remember { mutableStateOf(false) }
-    var goToSecurityQuestion by remember { mutableStateOf(false) }
+    var showPasswordSuccessDialog by remember { mutableStateOf(false) }
 
     val itemsPerPage = 16
     val pages = maxOf(1, (hiddenApps.size + itemsPerPage - 1) / itemsPerPage)
@@ -302,7 +259,8 @@ private fun VaultHomeScreen(
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
             val slice = hiddenApps.drop(page * itemsPerPage).take(itemsPerPage)
             AppGridLaunchable(
-                apps = slice, iconPackFilter = iconPackFilter,
+                apps = slice,
+                iconPackFilter = iconPackFilter,
                 themeColor = themeColor,
                 onLaunch = { pkg ->
                     val intent = context.packageManager.getLaunchIntentForPackage(pkg)
@@ -314,7 +272,6 @@ private fun VaultHomeScreen(
 
         PageDots(pagerState.currentPage, pages, themeColor)
 
-        // 底部功能栏
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -322,53 +279,63 @@ private fun VaultHomeScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            VaultBottomIconBtn(icon = Icons.Default.Add, label = "添加",
-                tint = themeColor, onClick = onAddClick)
-
+            VaultBottomIconBtn(
+                icon = Icons.Default.Add,
+                label = "添加",
+                tint = themeColor,
+                onClick = onAddClick
+            )
+            // 锁图标：点击才弹设置密码弹窗
             val lockIcon = if (vault.hasPassword) Icons.Default.Lock else Icons.Default.LockOpen
-            VaultBottomIconBtn(icon = lockIcon, label = if (vault.hasPassword) "已加密" else "未加密",
+            VaultBottomIconBtn(
+                icon = lockIcon,
+                label = if (vault.hasPassword) "已加密" else "未加密",
                 tint = if (vault.hasPassword) Color(0xFF4CAF50) else Color.White.copy(alpha = 0.6f),
                 onClick = {
                     if (!vault.hasPassword) showSetPasswordDialog = true
-                    // 已有密码时锁图标点击无需额外操作（在 Settings 里修改）
-                })
-
-            VaultBottomIconBtn(icon = Icons.Default.Settings, label = "设置",
-                tint = Color.White.copy(alpha = 0.8f), onClick = onSettingsClick)
+                }
+            )
+            VaultBottomIconBtn(
+                icon = Icons.Default.Settings,
+                label = "设置",
+                tint = Color.White.copy(alpha = 0.8f),
+                onClick = onSettingsClick
+            )
         }
     }
 
     if (showSetPasswordDialog) {
-        SetPasswordDialog(vault = vault, themeColor = themeColor,
+        SetPasswordDialog(
+            vault = vault,
+            themeColor = themeColor,
             onDismiss = { showSetPasswordDialog = false },
-            onSuccess = { showSetPasswordDialog = false; showPasswordConfirmDialog = true })
+            onSuccess = { showSetPasswordDialog = false; showPasswordSuccessDialog = true }
+        )
     }
 
-    if (showPasswordConfirmDialog) {
-        VaultDialog(onDismiss = { showPasswordConfirmDialog = false }) {
+    if (showPasswordSuccessDialog) {
+        VaultDialog(onDismiss = { showPasswordSuccessDialog = false }) {
             Text("密码锁定", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
-            Text("密码设置成功！可设置密保方便您找回密码",
-                color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, textAlign = TextAlign.Center)
+            Text(
+                "密码设置成功！可设置密保方便您找回密码",
+                color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { showPasswordConfirmDialog = false },
+                OutlinedButton(
+                    onClick = { showPasswordSuccessDialog = false },
                     modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                    Text("不了", color = Color.White)
-                }
-                Button(onClick = { showPasswordConfirmDialog = false; goToSecurityQuestion = true },
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                ) { Text("不了", color = Color.White) }
+                Button(
+                    onClick = { showPasswordSuccessDialog = false; onSettingsClick() },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                    Text("确定", color = Color.Black)
-                }
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) { Text("去设置", color = Color.Black) }
             }
         }
-    }
-
-    if (goToSecurityQuestion) {
-        goToSecurityQuestion = false
-        onSettingsClick() // 通过 Settings 导航到密保页（由 SettingsScreen 处理）
     }
 }
 
@@ -388,29 +355,31 @@ fun VaultSettingsScreen(
     var showResetDialog by remember { mutableStateOf(false) }
     var showNoPasswordToast by remember { mutableStateOf(false) }
     var showForgotDialog by remember { mutableStateOf(false) }
+    var forgotVerified by remember { mutableStateOf(false) }
 
     VaultFullScreenDialog(onDismiss = onBack) {
         VaultTopBar(title = "隐藏应用设置", onBack = onBack, themeColor = themeColor)
         Spacer(Modifier.height(12.dp))
 
-        // 修改密码
         VaultSettingsItem(
-            icon = Icons.Default.Key, label = "修改密码", themeColor = themeColor,
+            icon = Icons.Default.Key,
+            label = "修改密码",
+            themeColor = themeColor,
             onClick = {
                 if (!vault.hasPassword) showNoPasswordToast = true
                 else showChangePasswordDialog = true
             }
         )
-
-        // 密保问题
         VaultSettingsItem(
-            icon = Icons.Default.Security, label = "密保问题设置", themeColor = themeColor,
+            icon = Icons.Default.Security,
+            label = "密保问题设置",
+            themeColor = themeColor,
             onClick = onGoSecurityQuestion
         )
-
-        // 重置
         VaultSettingsItem(
-            icon = Icons.Default.RestartAlt, label = "重置隐藏应用", themeColor = themeColor,
+            icon = Icons.Default.RestartAlt,
+            label = "重置隐藏应用",
+            themeColor = themeColor,
             tintOverride = Color(0xFFFF6B6B),
             onClick = { showResetDialog = true }
         )
@@ -420,33 +389,46 @@ fun VaultSettingsScreen(
                 Text("尚未设置隐藏应用密码", color = Color.White, fontSize = 15.sp,
                     textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { showNoPasswordToast = false }, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                    Text("知道了", color = Color.Black)
-                }
+                Button(
+                    onClick = { showNoPasswordToast = false },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) { Text("知道了", color = Color.Black) }
             }
         }
     }
 
     if (showChangePasswordDialog) {
-        ChangePasswordDialog(vault = vault, themeColor = themeColor,
-            onDismiss = { showChangePasswordDialog = false },
-            onForgot = { showChangePasswordDialog = false; showForgotDialog = true })
+        ChangePasswordDialog(
+            vault = vault,
+            themeColor = themeColor,
+            skipOldVerify = forgotVerified,
+            onDismiss = { showChangePasswordDialog = false; forgotVerified = false },
+            onForgot = { showChangePasswordDialog = false; showForgotDialog = true }
+        )
     }
 
     if (showForgotDialog) {
-        SecurityVerifyDialog(vault = vault, themeColor = themeColor,
+        SecurityVerifyDialog(
+            vault = vault,
+            themeColor = themeColor,
             onDismiss = { showForgotDialog = false },
             onVerified = {
                 showForgotDialog = false
-                showChangePasswordDialog = true // 复用改密弹窗，跳过旧密码验证
-            })
+                forgotVerified = true
+                showChangePasswordDialog = true
+            }
+        )
     }
 
     if (showResetDialog) {
-        ResetVaultDialog(vault = vault, themeColor = themeColor, viewModel = viewModel,
+        ResetVaultDialog(
+            vault = vault,
+            themeColor = themeColor,
+            viewModel = viewModel,
             onDismiss = { showResetDialog = false },
-            onDone = onResetDone)
+            onDone = onResetDone
+        )
     }
 }
 
@@ -476,12 +458,13 @@ fun SecurityQuestionScreen(
     VaultFullScreenDialog(onDismiss = onDone) {
         VaultTopBar(title = "设置密保问题", onBack = onDone, themeColor = themeColor)
 
-        Column(modifier = Modifier
-            .weight(1f)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
-
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             SecurityQuestionGroup(index = 1, question = q1, answer = a1,
                 pool = questionPool, excludeSelected = listOf(q2, q3),
                 onQuestionChange = { q1 = it }, onAnswerChange = { a1 = it },
@@ -495,10 +478,11 @@ fun SecurityQuestionScreen(
                 onQuestionChange = { q3 = it }, onAnswerChange = { a3 = it },
                 themeColor = themeColor)
 
-            Text("注：该方法为唯一找回密码方式，请务必填写真实信息。",
+            Text(
+                "注：该方法为唯一找回密码方式，请务必填写真实信息。",
                 color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+            )
             if (error.isNotEmpty()) {
                 Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
                     modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
@@ -545,24 +529,28 @@ private fun SetPasswordDialog(
         Spacer(Modifier.height(10.dp))
         VaultTextField(value = pw2, onValueChange = { pw2 = it; error = "" },
             placeholder = "请再次输入密码", isPassword = true)
-        if (error.isNotEmpty()) Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
-            modifier = Modifier.padding(top = 6.dp))
+        if (error.isNotEmpty()) {
+            Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+        }
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                Text("取消 ❎", color = Color.White)
-            }
-            Button(onClick = {
-                when {
-                    pw1.length < 4 -> error = "密码长度至少 4 位"
-                    pw1 != pw2 -> error = "两次密码不一致"
-                    else -> { vault.setPassword(pw1); onSuccess() }
-                }
-            }, modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                Text("确定 ✅", color = Color.Black)
-            }
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) { Text("取消 ❎", color = Color.White) }
+            Button(
+                onClick = {
+                    when {
+                        pw1.length < 4 -> error = "密码长度至少 4 位"
+                        pw1 != pw2 -> error = "两次密码不一致"
+                        else -> { vault.setPassword(pw1); onSuccess() }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+            ) { Text("确定 ✅", color = Color.Black) }
         }
     }
 }
@@ -571,13 +559,15 @@ private fun SetPasswordDialog(
 private fun ChangePasswordDialog(
     vault: AppVaultManager,
     themeColor: Color,
+    skipOldVerify: Boolean = false,
     onDismiss: () -> Unit,
     onForgot: () -> Unit
 ) {
     var oldPw by remember { mutableStateOf("") }
     var newPw by remember { mutableStateOf("") }
     var newPw2 by remember { mutableStateOf("") }
-    var step by remember { mutableIntStateOf(0) } // 0=验旧密码 1=设新密码
+    // 密保验证通过后跳过旧密码验证步骤
+    var step by remember { mutableIntStateOf(if (skipOldVerify) 1 else 0) }
     var error by remember { mutableStateOf("") }
 
     VaultDialog(onDismiss = onDismiss) {
@@ -593,37 +583,47 @@ private fun ChangePasswordDialog(
             VaultTextField(value = newPw2, onValueChange = { newPw2 = it; error = "" },
                 placeholder = "请再次输入新密码", isPassword = true)
         }
-        if (error.isNotEmpty()) Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
-            modifier = Modifier.padding(top = 6.dp))
+        if (error.isNotEmpty()) {
+            Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp))
+        }
         Spacer(Modifier.height(20.dp))
         if (step == 0) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onForgot) { Text("忘记密码", color = themeColor, fontSize = 13.sp) }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("取消", color = Color.White.copy(alpha = 0.6f)) }
-                Button(onClick = {
-                    if (vault.verifyPassword(oldPw)) step = 1
-                    else error = "密码错误"
-                }, colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                    Text("确定", color = Color.Black)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onForgot) {
+                    Text("忘记密码", color = themeColor, fontSize = 13.sp)
                 }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) {
+                    Text("取消", color = Color.White.copy(alpha = 0.6f))
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (vault.verifyPassword(oldPw)) step = 1
+                        else error = "密码错误"
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) { Text("确定", color = Color.Black) }
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                    Text("取消 ❎", color = Color.White)
-                }
-                Button(onClick = {
-                    when {
-                        newPw.length < 4 -> error = "新密码长度至少 4 位"
-                        newPw != newPw2 -> error = "两次密码不一致"
-                        else -> { vault.setPassword(newPw); onDismiss() }
-                    }
-                }, modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                    Text("确定 ✅", color = Color.Black)
-                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                ) { Text("取消 ❎", color = Color.White) }
+                Button(
+                    onClick = {
+                        when {
+                            newPw.length < 4 -> error = "新密码长度至少 4 位"
+                            newPw != newPw2 -> error = "两次密码不一致"
+                            else -> { vault.setPassword(newPw); onDismiss() }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+                ) { Text("确定 ✅", color = Color.Black) }
             }
         }
     }
@@ -639,13 +639,16 @@ private fun SecurityVerifyDialog(
     val questions = remember { vault.getSecurityQuestions() }
     if (questions.isEmpty()) {
         VaultDialog(onDismiss = onDismiss) {
-            Text("未设置密保问题，无法通过密保找回密码。",
-                color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Text(
+                "未设置密保问题，无法通过密保找回密码。",
+                color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Center
+            )
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                Text("知道了", color = Color.Black)
-            }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+            ) { Text("知道了", color = Color.Black) }
         }
         return
     }
@@ -658,26 +661,33 @@ private fun SecurityVerifyDialog(
         questions.forEachIndexed { i, (q, _) ->
             Text(q, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 4.dp))
-            VaultTextField(value = answers[i], onValueChange = { v ->
-                answers = answers.toMutableList().also { it[i] = v }; error = ""
-            }, placeholder = "答案", isPassword = false)
+            VaultTextField(
+                value = answers[i],
+                onValueChange = { v -> answers = answers.toMutableList().also { it[i] = v }; error = "" },
+                placeholder = "答案",
+                isPassword = false
+            )
             Spacer(Modifier.height(10.dp))
         }
-        if (error.isNotEmpty()) Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp)
+        if (error.isNotEmpty()) {
+            Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp)
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                Text("取消", color = Color.White)
-            }
-            Button(onClick = {
-                val provided = questions.mapIndexed { i, (q, _) -> q to answers[i] }
-                if (vault.verifySecurityAnswers(provided)) onVerified()
-                else error = "答案不正确，请重试"
-            }, modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = themeColor)) {
-                Text("验证", color = Color.Black)
-            }
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) { Text("取消", color = Color.White) }
+            Button(
+                onClick = {
+                    val provided = questions.mapIndexed { i, (q, _) -> q to answers[i] }
+                    if (vault.verifySecurityAnswers(provided)) onVerified()
+                    else error = "答案不正确，请重试"
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = themeColor)
+            ) { Text("验证", color = Color.Black) }
         }
     }
 }
@@ -696,35 +706,38 @@ private fun ResetVaultDialog(
     VaultDialog(onDismiss = onDismiss) {
         Text("重置隐藏应用", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
+        Text(
+            "将应用还原到应用程序当中去，并删除密码与密保",
+            color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp
+        )
         if (vault.hasPassword) {
-            Text("将应用还原到应用程序当中去，并删除密码与密保",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             VaultTextField(value = pwInput, onValueChange = { pwInput = it; error = "" },
                 placeholder = "请输入隐藏应用密码", isPassword = true)
-            if (error.isNotEmpty()) Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
-                modifier = Modifier.padding(top = 6.dp))
-        } else {
-            Text("将应用还原到应用程序当中去，并删除密码与密保",
-                color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+            if (error.isNotEmpty()) {
+                Text(error, color = Color(0xFFFF6B6B), fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 6.dp))
+            }
         }
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))) {
-                Text("取消", color = Color.White)
-            }
-            Button(onClick = {
-                if (vault.hasPassword && !vault.verifyPassword(pwInput)) {
-                    error = "密码错误"; return@Button
-                }
-                viewModel.setHiddenPackages(emptySet())
-                vault.clearAll()
-                onDone()
-            }, modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))) {
-                Text("确定", color = Color.White)
-            }
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) { Text("取消", color = Color.White) }
+            Button(
+                onClick = {
+                    if (vault.hasPassword && !vault.verifyPassword(pwInput)) {
+                        error = "密码错误"; return@Button
+                    }
+                    viewModel.setHiddenPackages(emptySet())
+                    vault.clearAll()
+                    onDone()
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
+            ) { Text("确定", color = Color.White) }
         }
     }
 }
@@ -746,8 +759,7 @@ private fun AppGridSelectable(
             .fillMaxSize()
             .padding(horizontal = 8.dp)
     ) {
-        val rows = apps.chunked(4)
-        rows.forEach { rowApps ->
+        apps.chunked(4).forEach { rowApps ->
             Row(modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly) {
                 rowApps.forEach { app ->
@@ -761,9 +773,11 @@ private fun AppGridSelectable(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Box {
-                                IconStylingCard(app = app, filter = iconPackFilter,
+                                IconStylingCard(
+                                    app = app, filter = iconPackFilter,
                                     themeColor = themeColor,
-                                    modifier = Modifier.size(52.dp))
+                                    modifier = Modifier.size(52.dp)
+                                )
                                 if (isSelected) {
                                     Box(
                                         modifier = Modifier
@@ -774,7 +788,8 @@ private fun AppGridSelectable(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(Icons.Default.Check, null,
-                                            tint = Color.Black, modifier = Modifier.size(12.dp))
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(12.dp))
                                     }
                                 }
                             }
@@ -785,10 +800,7 @@ private fun AppGridSelectable(
                         }
                     }
                 }
-                // 补空格
-                repeat(4 - rowApps.size) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
+                repeat(4 - rowApps.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
         }
     }
@@ -806,8 +818,7 @@ private fun AppGridLaunchable(
             .fillMaxSize()
             .padding(horizontal = 8.dp)
     ) {
-        val rows = apps.chunked(4)
-        rows.forEach { rowApps ->
+        apps.chunked(4).forEach { rowApps ->
             Row(modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly) {
                 rowApps.forEach { app ->
@@ -819,8 +830,11 @@ private fun AppGridLaunchable(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            IconStylingCard(app = app, filter = iconPackFilter,
-                                themeColor = themeColor, modifier = Modifier.size(52.dp))
+                            IconStylingCard(
+                                app = app, filter = iconPackFilter,
+                                themeColor = themeColor,
+                                modifier = Modifier.size(52.dp)
+                            )
                             Spacer(Modifier.height(4.dp))
                             Text(app.label, color = Color.White, fontSize = 10.sp,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -837,31 +851,40 @@ private fun AppGridLaunchable(
 @Composable
 private fun PageDots(current: Int, total: Int, themeColor: Color) {
     if (total <= 1) return
-    Row(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
         repeat(total) { i ->
-            Box(modifier = Modifier
-                .padding(horizontal = 4.dp)
-                .size(if (i == current) 16.dp else 6.dp, 6.dp)
-                .clip(CircleShape)
-                .background(if (i == current) themeColor else Color.White.copy(alpha = 0.25f)))
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .size(if (i == current) 16.dp else 6.dp, 6.dp)
+                    .clip(CircleShape)
+                    .background(if (i == current) themeColor else Color.White.copy(alpha = 0.25f))
+            )
         }
     }
 }
 
 @Composable
 private fun VaultTopBar(title: String, onBack: () -> Unit, themeColor: Color) {
-    Row(modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBackIosNew, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.ArrowBackIosNew, null,
+                tint = Color.White, modifier = Modifier.size(20.dp))
         }
-        Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Text(
+            title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f), textAlign = TextAlign.Center
+        )
         Spacer(Modifier.size(40.dp))
     }
     HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
@@ -874,8 +897,12 @@ private fun VaultBottomIconBtn(
     tint: Color,
     onClick: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick).padding(8.dp)) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(4.dp))
         Text(label, color = tint, fontSize = 11.sp)
@@ -890,19 +917,23 @@ private fun VaultSettingsItem(
     tintOverride: Color? = null,
     onClick: () -> Unit
 ) {
-    Row(modifier = Modifier
-        .fillMaxWidth()
-        .clickable(onClick = onClick)
-        .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Icon(icon, null, tint = tintOverride ?: themeColor, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(16.dp))
         Text(label, color = tintOverride ?: Color.White, fontSize = 15.sp,
             modifier = Modifier.weight(1f))
         Icon(Icons.Default.ChevronRight, null, tint = Color.White.copy(alpha = 0.3f))
     }
-    HorizontalDivider(color = Color.White.copy(alpha = 0.07f),
-        modifier = Modifier.padding(horizontal = 20.dp))
+    HorizontalDivider(
+        color = Color.White.copy(alpha = 0.07f),
+        modifier = Modifier.padding(horizontal = 20.dp)
+    )
 }
 
 @Composable
@@ -919,26 +950,35 @@ private fun SecurityQuestionGroup(
     var expanded by remember { mutableStateOf(false) }
     val available = pool.filter { it !in excludeSelected || it == question }
 
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(16.dp))
-        .background(Color.White.copy(alpha = 0.06f))
-        .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         Text("问题 $index", color = themeColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        // 问题下拉
         Box {
-            OutlinedButton(onClick = { expanded = true },
+            OutlinedButton(
+                onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth(),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                shape = RoundedCornerShape(12.dp)) {
-                Text(question.ifBlank { "选择密保问题" },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    question.ifBlank { "选择密保问题" },
                     color = if (question.isBlank()) Color.White.copy(alpha = 0.4f) else Color.White,
-                    fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
                 Icon(Icons.Default.ArrowDropDown, null, tint = Color.White.copy(alpha = 0.5f))
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false },
-                modifier = Modifier.background(Color(0xFF2A2A2A))) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Color(0xFF2A2A2A))
+            ) {
                 available.forEach { q ->
                     DropdownMenuItem(
                         text = { Text(q, color = Color.White, fontSize = 13.sp) },
@@ -947,7 +987,6 @@ private fun SecurityQuestionGroup(
                 }
             }
         }
-        // 答案输入
         VaultTextField(value = answer, onValueChange = onAnswerChange,
             placeholder = "输入答案", isPassword = false)
     }
@@ -961,13 +1000,20 @@ private fun VaultTextField(
     isPassword: Boolean
 ) {
     OutlinedTextField(
-        value = value, onValueChange = onValueChange,
-        placeholder = { Text(placeholder, color = Color.White.copy(alpha = 0.35f), fontSize = 13.sp) },
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = {
+            Text(placeholder, color = Color.White.copy(alpha = 0.35f), fontSize = 13.sp)
+        },
+        visualTransformation = if (isPassword)
+            PasswordVisualTransformation()
+        else
+            androidx.compose.ui.text.input.VisualTransformation.None,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Color.White.copy(alpha = 0.4f),
             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-            focusedTextColor = Color.White, unfocusedTextColor = Color.White
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White
         ),
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
@@ -975,31 +1021,37 @@ private fun VaultTextField(
     )
 }
 
-/** 小弹窗容器（居中卡片样式） */
 @Composable
 private fun VaultDialog(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(modifier = Modifier
-            .fillMaxWidth(0.9f)
-            .clip(RoundedCornerShape(24.dp))
-            .background(Color(0xFF1E1E1E))
-            .padding(24.dp),
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF1E1E1E))
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            content = content)
+            content = content
+        )
     }
 }
 
-/** 全屏对话框容器（用于各管理页面） */
 @Composable
 private fun VaultFullScreenDialog(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)) {
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xEE131313))
-            .statusBarsPadding()
-            .navigationBarsPadding(),
-            content = content)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xEE131313))
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            content = content
+        )
     }
 }
