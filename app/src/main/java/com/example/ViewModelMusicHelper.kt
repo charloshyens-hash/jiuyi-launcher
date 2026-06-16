@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 

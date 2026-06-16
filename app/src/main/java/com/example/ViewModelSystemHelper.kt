@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,8 +24,9 @@ fun LauncherViewModel.loadApps() {
             .mapNotNull { resolveInfo ->
                 try {
                     AppModel(
+                        label = resolveInfo.loadLabel(pm).toString(),
                         packageName = resolveInfo.activityInfo.packageName,
-                        label = resolveInfo.loadLabel(pm).toString()
+                        className = resolveInfo.activityInfo.name
                     )
                 } catch (e: Exception) { null }
             }
