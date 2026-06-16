@@ -1117,6 +1117,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         hiddenPackagesFlow.value = prefs.hiddenPackages
     }
 
+    /** Vault 系统专用：批量替换隐藏包名集合 */
+    fun setHiddenPackages(pkgs: Set<String>) {
+        prefs.hiddenPackages = pkgs
+        hiddenPackagesFlow.value = pkgs
+        refreshInstalledApps()
+    }
+
     fun boostRam() {
         viewModelScope.launch {
             if (isRamBoosting) return@launch
