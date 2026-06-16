@@ -74,57 +74,47 @@ fun AppDrawerDialogs(
     onRenameFolderClose: () -> Unit,
     searchQuery: String
 ) {
-        // Expanded Search Dialog Picker
-        if (isSearchDialogOpen) {
-            AlertDialog(
-                onDismissRequest = { onSearchDialogClose() },
-                containerColor = Color(0xFF1C1B1B),
-                title = {
-                    Text(
-                        text = "快速搜索应用",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = {
-                            viewModel.searchQuery.value = it
-                            // Auto-scroll outer pager to "应用" (index 0) if query is typed
-                            if (it.isNotEmpty() && pagerState.currentPage != 0) {
-                                coroutineScope.launch {
-                                    pagerState.scrollToPage(0)
-                                }
-                            }
-                        },
-                        placeholder = { Text("可输入拼音/文字/包名", color = Color.White.copy(alpha = 0.4f)) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = themeColor,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = { onSearchDialogClose() }
-                    ) {
-                        Text("开始查找", color = themeColor, fontWeight = FontWeight.Bold)
-                    }
+    // ── Search Dialog ──────────────────────────────────────────────────────
+    if (isSearchDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { onSearchDialogClose() },
+            containerColor = Color(0xFF1C1B1B),
+            title = {
+                Text(
+                    text = "快速搜索应用",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.searchQuery.value = it },
+                    placeholder = { Text("可输入拼音/文字/包名", color = Color.White.copy(alpha = 0.4f)) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = themeColor,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onSearchDialogClose() }) {
+                    Text("开始查找", color = themeColor, fontWeight = FontWeight.Bold)
                 }
-            )
-        }
+            }
+        )
     }
 
-    // Dialog to manage hidden apps dynamically
+    // ── Manage Hidden Apps Dialog ──────────────────────────────────────────
     if (isManageHiddenDialogOpen) {
         val allApps = viewModel.appList.collectAsState().value.sortedBy { it.label.lowercase() }
         val hiddenPackages by viewModel.hiddenPackagesFlow.collectAsState()
+        val iconPackFilter by viewModel.iconPackFilter.collectAsState()
 
         AlertDialog(
             onDismissRequest = { onManageHiddenClose() },
@@ -145,7 +135,6 @@ fun AppDrawerDialogs(
                         fontSize = 12.sp,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
-                    
                     Box(modifier = Modifier.height(300.dp).fillMaxWidth()) {
                         androidx.compose.foundation.lazy.LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -156,9 +145,7 @@ fun AppDrawerDialogs(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.toggleHiddenPackage(app.packageName)
-                                        }
+                                        .clickable { viewModel.toggleHiddenPackage(app.packageName) }
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -179,9 +166,7 @@ fun AppDrawerDialogs(
                                     )
                                     Checkbox(
                                         checked = isHidden,
-                                        onCheckedChange = {
-                                            viewModel.toggleHiddenPackage(app.packageName)
-                                        },
+                                        onCheckedChange = { viewModel.toggleHiddenPackage(app.packageName) },
                                         colors = CheckboxDefaults.colors(
                                             checkedColor = themeColor,
                                             checkmarkColor = Color.White
@@ -201,7 +186,7 @@ fun AppDrawerDialogs(
         )
     }
 
-    // --- Organization Dialog overlays (V2) ---
+    // ── Sort Dialog ────────────────────────────────────────────────────────
     if (showSortDialog) {
         val currentSortType by viewModel.drawerSortType.collectAsState()
         AlertDialog(
@@ -245,6 +230,7 @@ fun AppDrawerDialogs(
         )
     }
 
+    // ── Smart Category Dialog ──────────────────────────────────────────────
     if (showSmartCategoryDialog) {
         AlertDialog(
             onDismissRequest = { onSmartCategoryClose() },
@@ -305,6 +291,7 @@ fun AppDrawerDialogs(
         )
     }
 
+    // ── New Folder Dialog ──────────────────────────────────────────────────
     if (showNewFolderDialog) {
         var folderNameInput by remember { mutableStateOf("新建文件夹") }
         AlertDialog(
@@ -349,6 +336,7 @@ fun AppDrawerDialogs(
         )
     }
 
+    // ── List Settings Dialog ───────────────────────────────────────────────
     if (showListSettingsDialog) {
         val currentRoundness by viewModel.iconRoundness.collectAsState()
         val currentSizeScale by viewModel.iconSizeScale.collectAsState()
@@ -376,7 +364,10 @@ fun AppDrawerDialogs(
                         Switch(
                             checked = currentShowLabel,
                             onCheckedChange = { viewModel.toggleShowLabels() },
-                            colors = SwitchDefaults.colors(checkedThumbColor = themeColor, checkedTrackColor = themeColor.copy(alpha = 0.5f))
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = themeColor,
+                                checkedTrackColor = themeColor.copy(alpha = 0.5f)
+                            )
                         )
                     }
 
@@ -389,7 +380,10 @@ fun AppDrawerDialogs(
                         Switch(
                             checked = currentShowSys,
                             onCheckedChange = { viewModel.toggleShowSystemApps() },
-                            colors = SwitchDefaults.colors(checkedThumbColor = themeColor, checkedTrackColor = themeColor.copy(alpha = 0.5f))
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = themeColor,
+                                checkedTrackColor = themeColor.copy(alpha = 0.5f)
+                            )
                         )
                     }
 
@@ -407,7 +401,10 @@ fun AppDrawerDialogs(
                                 val next = if (currentGrid == "4x6") "5x5" else "4x6"
                                 viewModel.updateDrawerGrid(next)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = themeColor.copy(alpha = 0.15f), contentColor = themeColor),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = themeColor.copy(alpha = 0.15f),
+                                contentColor = themeColor
+                            ),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text("切换", fontSize = 11.sp)
@@ -426,7 +423,10 @@ fun AppDrawerDialogs(
                                 val nIdx = (filters.indexOf(currentFilter) + 1) % filters.size
                                 viewModel.updateIconPackFilter(filters[nIdx])
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = themeColor.copy(alpha = 0.15f), contentColor = themeColor),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = themeColor.copy(alpha = 0.15f),
+                                contentColor = themeColor
+                            ),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text("切滤镜", fontSize = 11.sp)
@@ -480,19 +480,21 @@ fun AppDrawerDialogs(
         )
     }
 
+    // ── Folder Detail Dialog ───────────────────────────────────────────────
     if (activeOpenedFolder != null) {
         val foldersList by viewModel.drawerFolders.collectAsState()
-        val folder = foldersList.find { it.id == activeOpenedFolder!!.id }
-        
+        val folder = foldersList.find { it.id == activeOpenedFolder.id }
+
         if (folder == null) {
             onFolderClose()
         } else {
             var showAppsSelector by remember { mutableStateOf(false) }
             var isRenamingFolder by remember { mutableStateOf(false) }
             var updatedNameInput by remember { mutableStateOf(folder.name) }
-            
+
             val rawAppList by viewModel.appList.collectAsState()
             val folderApps = folder.packageNames.mapNotNull { pkg -> rawAppList.firstOrNull { it.packageName == pkg } }
+            val showLabels by viewModel.showLabels.collectAsState()
 
             AlertDialog(
                 onDismissRequest = { onFolderClose() },
@@ -564,7 +566,8 @@ fun AppDrawerDialogs(
                                 val iconRoundness by viewModel.iconRoundness.collectAsState()
                                 val iconSizeScale by viewModel.iconSizeScale.collectAsState()
                                 val fontSizeSp by viewModel.fontSizeSp.collectAsState()
-                                
+                                val context = LocalContext.current
+
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -574,11 +577,8 @@ fun AppDrawerDialogs(
                                                     viewModel.recordAppLaunch(app.packageName)
                                                     app.launch(context)
                                                     onFolderClose()
-                                                    onClose()
                                                 },
-                                                onLongPress = {
-                                                    showAppMenu = true
-                                                }
+                                                onLongPress = { showAppMenu = true }
                                             )
                                         },
                                     contentAlignment = Alignment.Center
@@ -681,8 +681,12 @@ fun AppDrawerDialogs(
                     containerColor = Color(0xFF2E2E2E),
                     text = {
                         Column(modifier = Modifier.fillMaxWidth().height(350.dp)) {
-                            Text("勾选应用归入本文件夹（未勾选的应用会被移出此文件夹）：", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
-                            
+                            Text(
+                                "勾选应用归入本文件夹（未勾选的应用会被移出此文件夹）：",
+                                color = Color.Gray,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
                             val availableAppsSorted = rawAppList.sortedBy { it.label.lowercase() }
                             LazyColumn(modifier = Modifier.weight(1f)) {
                                 items(availableAppsSorted) { app ->
@@ -713,7 +717,7 @@ fun AppDrawerDialogs(
                                         }
                                         Checkbox(
                                             checked = isChecked,
-                                            onCheckedChange = { checked ->
+                                            onCheckedChange = {
                                                 if (isChecked) {
                                                     viewModel.removeAppFromDrawerFolder(folder.id, app.packageName)
                                                 } else {
@@ -740,6 +744,7 @@ fun AppDrawerDialogs(
         }
     }
 
+    // ── Rename Folder Dialog ───────────────────────────────────────────────
     if (showRenameFolderDialog != null) {
         val renameTarget = showRenameFolderDialog!!
         var renameInput by remember { mutableStateOf(renameTarget.name) }
